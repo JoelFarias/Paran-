@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import textwrap
 import unicodedata
 import warnings
+import os
 from typing import List, Optional, Tuple
 
 warnings.filterwarnings('ignore')
@@ -130,9 +131,23 @@ def normalizar_string(s):
 
 @st.cache_data
 def carregar_csv(caminho: str) -> pd.DataFrame:
+    """Carrega arquivos CSV com tratamento de erro melhorado para Streamlit Cloud"""
     try:
-        df = pd.read_csv(caminho)
+        # Verifica se o arquivo existe
+        if not os.path.exists(caminho):
+            st.error(f"Arquivo não encontrado: {caminho}")
+            return pd.DataFrame()
+        
+        df = pd.read_csv(caminho, encoding='utf-8')
         return df
+    except UnicodeDecodeError:
+        try:
+            # Tenta com encoding latin-1 se utf-8 falhar
+            df = pd.read_csv(caminho, encoding='latin-1')
+            return df
+        except Exception as e:
+            st.error(f"Erro ao carregar {caminho} com encoding latin-1: {e}")
+            return pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao carregar {caminho}: {e}")
         return pd.DataFrame()
@@ -751,15 +766,64 @@ def fig_mapa_alertas_desmatamento(df_alertas: pd.DataFrame) -> go.Figure:
     
     return fig
 
-df_alertas_raw = carregar_csv("Alertas_Vale_Ribeira.csv")
-df_cnuc_raw = carregar_csv("cnuc.csv")
-df_sigef_raw = carregar_csv("SIGEF_Vale_Ribeira.csv")
-df_queimadas_raw = carregar_csv("Risco_Fogo.csv")
+# Carregamento dos dados com verificação de arquivos
+@st.cache_data
+def verificar_e_carregar_dados():
+    """Verifica a existência dos arquivos e carrega os dados"""
+    arquivos_necessarios = [
+        "Alertas_Vale_Ribeira.csv",
+        "cnuc.csv", 
+        "SIGEF_Vale_Ribeira.csv",
+        "Risco_Fogo.csv"
+    ]
+    
+    dados = {}
+    arquivos_encontrados = []
+    arquivos_faltando = []
+    
+    for arquivo in arquivos_necessarios:
+        if os.path.exists(arquivo):
+            dados[arquivo] = carregar_csv(arquivo)
+            arquivos_encontrados.append(arquivo)
+        else:
+            dados[arquivo] = pd.DataFrame()
+            arquivos_faltando.append(arquivo)
+    
+    return dados, arquivos_encontrados, arquivos_faltando
 
-st.title("Dashboard Vale do Ribeira - Paraná (Versão CSV)")
+# Carregar dados
+dados, arquivos_ok, arquivos_faltando = verificar_e_carregar_dados()
 
-debug_mode = False
+df_alertas_raw = dados["Alertas_Vale_Ribeira.csv"]
+df_cnuc_raw = dados["cnuc.csv"]
+df_sigef_raw = dados["SIGEF_Vale_Ribeira.csv"]
+df_queimadas_raw = dados["Risco_Fogo.csv"]
 
+st.title("Dashboard Vale do Ribeira - Paraná")
+
+# Exibir status dos arquivos
+if arquivos_faltando:
+    st.warning(f"⚠️ Arquivos não encontrados: {', '.join(arquivos_faltando)}")
+    st.info("📋 Para uso completo do dashboard, certifique-se de que todos os arquivos CSV estão na pasta raiz.")
+
+if arquivos_ok:
+    st.success(f"✅ Arquivos carregados: {', '.join(arquivos_ok)}")
+
+# Exibir informações sobre os dados carregados
+if not all(df.empty for df in [df_alertas_raw, df_cnuc_raw, df_sigef_raw, df_queimadas_raw]):
+    with st.expander("📊 Informações sobre os dados carregados"):
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Alertas", len(df_alertas_raw) if not df_alertas_raw.empty else 0)
+        with col2:
+            st.metric("UCs (CNUC)", len(df_cnuc_raw) if not df_cnuc_raw.empty else 0)
+        with col3:
+            st.metric("SIGEF", len(df_sigef_raw) if not df_sigef_raw.empty else 0)
+        with col4:
+            st.metric("Queimadas", len(df_queimadas_raw) if not df_queimadas_raw.empty else 0)
+
+# --- ABA SOBREPOSIÇÕES ---
 tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas"])
 
 with tabs[0]:
@@ -885,6 +949,7 @@ with tabs[0]:
     
     st.divider()
 
+# --- ABA DESMATAMENTO ---
 with tabs[1]:
     st.header("Desmatamento")
 
@@ -1080,6 +1145,7 @@ with tabs[1]:
     else:
         st.info("Dados não disponíveis para o ranking no período selecionado.")
 
+# --- ABA QUEIMADAS ---
 with tabs[2]:
     st.header("Focos de Calor")
 
