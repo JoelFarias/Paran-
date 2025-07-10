@@ -131,9 +131,7 @@ def normalizar_string(s):
 
 @st.cache_data
 def carregar_csv(caminho: str) -> pd.DataFrame:
-    """Carrega arquivos CSV com tratamento de erro melhorado para Streamlit Cloud"""
     try:
-        # Verifica se o arquivo existe
         if not os.path.exists(caminho):
             st.error(f"Arquivo não encontrado: {caminho}")
             return pd.DataFrame()
@@ -142,7 +140,6 @@ def carregar_csv(caminho: str) -> pd.DataFrame:
         return df
     except UnicodeDecodeError:
         try:
-            # Tenta com encoding latin-1 se utf-8 falhar
             df = pd.read_csv(caminho, encoding='latin-1')
             return df
         except Exception as e:
@@ -826,13 +823,7 @@ with tabs[0]:
         - Distribuição por municípios
         - Áreas e contagens por Unidade de Conservação
         
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
-        
-        **Dados utilizados:**
-        - Alertas: Alertas_Vale_Ribeira.csv
-        - SIGEF: SIGEF_Vale_Ribeira.csv  
-        - UCs: cnuc.csv
-        """)
+        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná """)
 
     area_alertas, contagem_sigef, total_unidades, contagem_alerta, area_cnuc = criar_cards_csv(df_cnuc_raw, df_sigef_raw, df_alertas_raw)
     
@@ -917,7 +908,7 @@ with tabs[0]:
     
     mostrar_tabela_unificada_csv(df_alertas_raw, df_sigef_raw, df_cnuc_raw)
     
-    st.caption("Tabela 1.1: Dados consolidados por município do Vale do Ribeira (PR) - Versão CSV.")
+    st.caption("Tabela 1.1: Dados consolidados por município do Vale do Ribeira (PR)")
     with st.expander("Detalhes e Fonte da Tabela 1.1"):
         st.write("""
         **Interpretação:**
@@ -930,13 +921,7 @@ with tabs[0]:
         - Alertas em hectares
         - SIGEF em quantidade de registros
         - CNUC em hectares
-        - Totais na última linha
-
-        **Fonte:** 
-        - Alertas: Alertas_Vale_Ribeira.csv
-        - SIGEF: SIGEF_Vale_Ribeira.csv
-        - CNUC: cnuc.csv
-        """)
+        - Totais na última linha """)
     
     st.divider()
 
@@ -951,9 +936,7 @@ with tabs[1]:
         - Evolução temporal
         - Distribuição por município
 
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
-
-        Os dados são provenientes do arquivo Alertas_Vale_Ribeira.csv.
+        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná.
         """)
         st.markdown(
             "**Fonte Geral da Seção:** MapBiomas Alerta. Dados extraídos e compilados.",
@@ -1023,8 +1006,6 @@ with tabs[1]:
                     - Hover mostra quantidade de alertas e área total
                     - Inclui todos os 7 municípios da região
                     - Ordenado do maior para o menor
-
-                    **Fonte:** Alertas_Vale_Ribeira.csv.
                     """)
             else:
                 st.info("Nenhum alerta encontrado nos municípios do Vale do Ribeira para o período selecionado.")
@@ -1051,8 +1032,6 @@ with tabs[1]:
                     - Posições são centros aproximados dos municípios
                     - Não mostra a localização exata dos alertas individuais
                     - Para análise espacial detalhada, utilize dados geográficos completos
-
-                    **Fonte:** Alertas_Vale_Ribeira.csv com coordenadas aproximadas.
                     """)
             else:
                 st.info("Dados insuficientes para gerar o mapa.")
@@ -1078,8 +1057,6 @@ with tabs[1]:
                 - Pontos marcam cada mês com dados
                 - Valores exibidos sobre os pontos
                 - Agregação mensal da área de alertas
-
-                **Fonte:** Alertas_Vale_Ribeira.csv.
                 """)
         else:
             st.info("Dados temporais não disponíveis para este gráfico.")
@@ -1127,8 +1104,6 @@ with tabs[1]:
                 - Qtd Alertas: Número total de alertas
                 - Área Média: Área média por alerta (ha)
                 - Ano Min/Max: Período de abrangência dos dados
-
-                **Fonte:** Alertas_Vale_Ribeira.csv.
                 """)
 
         else:
@@ -1149,8 +1124,6 @@ with tabs[2]:
         - Evolução temporal
 
         **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
-
-        Os dados são provenientes do arquivo Risco_Fogo.csv.
         """)
         st.markdown(
             "**Fonte Geral da Seção:** INPE – Programa Queimadas, 2025.",
