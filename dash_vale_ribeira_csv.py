@@ -801,17 +801,8 @@ df_queimadas_raw = dados["Risco_Fogo.csv"]
 
 st.title("Dashboard Vale do Ribeira - Paraná")
 
-# Exibir status dos arquivos
-if arquivos_faltando:
-    st.warning(f"⚠️ Arquivos não encontrados: {', '.join(arquivos_faltando)}")
-    st.info("📋 Para uso completo do dashboard, certifique-se de que todos os arquivos CSV estão na pasta raiz.")
-
-if arquivos_ok:
-    st.success(f"✅ Arquivos carregados: {', '.join(arquivos_ok)}")
-
-# Exibir informações sobre os dados carregados
 if not all(df.empty for df in [df_alertas_raw, df_cnuc_raw, df_sigef_raw, df_queimadas_raw]):
-    with st.expander("📊 Informações sobre os dados carregados"):
+    with st.expander("Informações sobre os dados carregados"):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
