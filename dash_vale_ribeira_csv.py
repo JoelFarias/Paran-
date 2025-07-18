@@ -161,7 +161,6 @@ def filtrar_alertas_vale_ribeira(df_alertas):
     return df_alertas[df_alertas['MUNICIPIO'].isin(municipios_vale)].copy()
 
 def filtrar_queimadas_vale_ribeira(df_queimadas):
-    """Filtra dados de queimadas para os municípios do Vale do Ribeira"""
     municipios_vale = [
         "ADRIANÓPOLIS", "BOCAIÚVA DO SUL", "CERRO AZUL", 
         "DOUTOR ULYSSES", "ITAPERUÇU", "RIO BRANCO DO SUL", "TUNAS DO PARANÁ"
@@ -177,7 +176,6 @@ def filtrar_queimadas_vale_ribeira(df_queimadas):
     return df_queimadas[df_queimadas['Municipio_norm'].isin(municipios_vale)].copy()
 
 def criar_graficos_queimadas(df_queimadas):
-    """Cria gráficos para análise de queimadas"""
     graficos = {}
     
     if df_queimadas.empty:
@@ -333,7 +331,6 @@ def criar_graficos_queimadas(df_queimadas):
     return graficos
 
 def criar_ranking_queimadas(df_queimadas, indicador):
-    """Cria ranking de municípios por indicadores de queimadas"""
     if df_queimadas.empty or 'Municipio' not in df_queimadas.columns:
         return pd.DataFrame()
     
@@ -690,7 +687,6 @@ def fig_desmatamento_municipal_csv(df_alertas: pd.DataFrame) -> go.Figure:
     
     return _apply_layout(fig, title="Desmatamento por Município do Vale do Ribeira", title_size=16)
 
-# --- NOVA FUNÇÃO: Mapa de Alertas de Desmatamento ---
 def fig_mapa_alertas_desmatamento(df_alertas: pd.DataFrame) -> go.Figure:
     municipios_vale = [
         "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
@@ -763,10 +759,8 @@ def fig_mapa_alertas_desmatamento(df_alertas: pd.DataFrame) -> go.Figure:
     
     return fig
 
-# Carregamento dos dados com verificação de arquivos
 @st.cache_data
 def verificar_e_carregar_dados():
-    """Verifica a existência dos arquivos e carrega os dados"""
     arquivos_necessarios = [
         "Alertas_Vale_Ribeira.csv",
         "cnuc.csv", 
@@ -788,7 +782,6 @@ def verificar_e_carregar_dados():
     
     return dados, arquivos_encontrados, arquivos_faltando
 
-# Carregar dados
 dados, arquivos_ok, arquivos_faltando = verificar_e_carregar_dados()
 
 df_alertas_raw = dados["Alertas_Vale_Ribeira.csv"]
@@ -798,8 +791,12 @@ df_queimadas_raw = dados["Risco_Fogo.csv"]
 
 st.title("Dashboard Vale do Ribeira - Paraná")
 
+if arquivos_faltando:
+    st.warning(f"⚠️ Arquivos não encontrados: {', '.join(arquivos_faltando)}")
+    st.info("📋 Para uso completo do dashboard, certifique-se de que todos os arquivos CSV estão na pasta raiz.")
+
 if not all(df.empty for df in [df_alertas_raw, df_cnuc_raw, df_sigef_raw, df_queimadas_raw]):
-    with st.expander("Informações sobre os dados carregados"):
+    with st.expander("📊 Informações sobre os dados carregados"):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -811,8 +808,145 @@ if not all(df.empty for df in [df_alertas_raw, df_cnuc_raw, df_sigef_raw, df_que
         with col4:
             st.metric("Queimadas", len(df_queimadas_raw) if not df_queimadas_raw.empty else 0)
 
-# --- ABA SOBREPOSIÇÕES ---
-tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas"])
+@st.cache_data
+def load_data(filepath):
+    """Carrega e pré-processa os dados dos processos judiciais."""
+    try:
+        df = pd.read_csv(filepath, delimiter=';')
+        df['data_ajuizamento'] = pd.to_datetime(df['data_ajuizamento'], format='%d/%m/%Y', errors='coerce')
+        df.dropna(subset=['data_ajuizamento'], inplace=True)
+        return df
+    except FileNotFoundError:
+        st.error(f"Arquivo não encontrado: {filepath}. Certifique-se de que o arquivo está na mesma pasta que o script.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar o arquivo: {e}")
+        return pd.DataFrame()
+
+def fig_distribuicao_processos_municipio(df):
+    """Cria um gráfico de barras da distribuição de processos por município."""
+    if df.empty or 'municipio' not in df.columns:
+        return go.Figure()
+
+    dist_municipio = df['municipio'].value_counts().reset_index()
+    dist_municipio.columns = ['municipio', 'quantidade']
+    
+    fig = px.bar(
+        dist_municipio,
+        x='quantidade',
+        y='municipio',
+        orientation='h',
+        labels={'quantidade': 'Nº de Processos', 'municipio': 'Município'},
+        text='quantidade',
+        color='quantidade',
+        color_continuous_scale=px.colors.sequential.Viridis
+    )
+    fig.update_layout(
+        yaxis={'categoryorder':'total ascending'},
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    fig.update_traces(textposition='outside')
+    return _apply_layout(fig, title="Distribuição de Processos por Município", title_size=14)
+
+def fig_ranking_assuntos(df):
+    if df.empty or 'assuntos' not in df.columns:
+        return go.Figure()
+    
+    assuntos_series = df['assuntos'].str.split(', ').explode()
+    top_assuntos = assuntos_series.value_counts().nlargest(10).reset_index()
+    top_assuntos.columns = ['assunto', 'quantidade']
+
+    top_assuntos['assunto_wrap'] = top_assuntos['assunto'].apply(lambda x: '<br>'.join(textwrap.wrap(x, width=30)))
+
+    fig = px.bar(
+        top_assuntos,
+        x='quantidade',
+        y='assunto_wrap',
+        orientation='h',
+        labels={'quantidade': 'Nº de Processos', 'assunto_wrap': 'Assunto'},
+        text='quantidade',
+        color='quantidade',
+        color_continuous_scale=px.colors.sequential.Plasma
+    )
+    
+    fig.update_layout(
+        yaxis={'categoryorder':'total ascending'},
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        coloraxis_showscale=False  
+    )
+    
+    fig.update_traces(textposition='outside')
+    
+    return _apply_layout(fig, title="Top 10 Assuntos mais Frequentes", title_size=14)
+
+def fig_evolucao_temporal_processos(df):
+    if df.empty or 'data_ajuizamento' not in df.columns:
+        return go.Figure()
+
+    df_temporal = df.set_index('data_ajuizamento').resample('Y').size().reset_index(name='quantidade')
+    df_temporal['ano'] = df_temporal['data_ajuizamento'].dt.year
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_temporal['ano'], 
+        y=df_temporal['quantidade'],
+        mode='lines+markers+text',
+        text=df_temporal['quantidade'],
+        textposition="top center",
+        line=dict(color='#2ca02c', width=2)
+    ))
+    fig.update_layout(
+        xaxis_title='Ano de Ajuizamento',
+        yaxis_title='Nº de Processos',
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return _apply_layout(fig, title="Evolução Anual de Novos Processos", title_size=14)
+
+def criar_graficos_processos(df_processos):
+    if df_processos.empty:
+        return {}
+    
+    graficos = {}
+    
+    fig_municipios = fig_distribuicao_processos_municipio(df_processos)
+    graficos['municipios'] = fig_municipios
+    
+    fig_assuntos = fig_ranking_assuntos(df_processos)
+    graficos['assuntos'] = fig_assuntos
+    
+    fig_temporal = fig_evolucao_temporal_processos(df_processos)
+    graficos['temporal'] = fig_temporal
+    
+    if 'classe' in df_processos.columns:
+        classes = df_processos['classe'].value_counts().nlargest(10)
+        fig_classes = go.Figure(data=[
+            go.Bar(
+                x=classes.index,
+                y=classes.values,
+                marker_color='#1f77b4'
+            )
+        ])
+        fig_classes.update_layout(
+            yaxis_title='Quantidade de Processos',
+            xaxis_title='Classe',
+            height=400,
+            showlegend=False
+        )
+        graficos['classes'] = _apply_layout(fig_classes, title="Top 10 Classes Processuais", title_size=14)
+
+    return graficos
+
+
+df_processos = load_data("processos_ambientais_vale_do_ribeira_pr.csv")
+
+
+tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas", 'Justiça'])
 
 with tabs[0]:
     st.header("Sobreposições")
@@ -823,7 +957,13 @@ with tabs[0]:
         - Distribuição por municípios
         - Áreas e contagens por Unidade de Conservação
         
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná """)
+        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
+        
+        **Dados utilizados:**
+        - Alertas: Alertas_Vale_Ribeira.csv
+        - SIGEF: SIGEF_Vale_Ribeira.csv  
+        - UCs: cnuc.csv
+        """)
 
     area_alertas, contagem_sigef, total_unidades, contagem_alerta, area_cnuc = criar_cards_csv(df_cnuc_raw, df_sigef_raw, df_alertas_raw)
     
@@ -908,7 +1048,7 @@ with tabs[0]:
     
     mostrar_tabela_unificada_csv(df_alertas_raw, df_sigef_raw, df_cnuc_raw)
     
-    st.caption("Tabela 1.1: Dados consolidados por município do Vale do Ribeira (PR)")
+    st.caption("Tabela 1.1: Dados consolidados por município do Vale do Ribeira (PR) - Versão CSV.")
     with st.expander("Detalhes e Fonte da Tabela 1.1"):
         st.write("""
         **Interpretação:**
@@ -921,7 +1061,13 @@ with tabs[0]:
         - Alertas em hectares
         - SIGEF em quantidade de registros
         - CNUC em hectares
-        - Totais na última linha """)
+        - Totais na última linha
+
+        **Fonte:** 
+        - Alertas: Alertas_Vale_Ribeira.csv
+        - SIGEF: SIGEF_Vale_Ribeira.csv
+        - CNUC: cnuc.csv
+        """)
     
     st.divider()
 
@@ -936,7 +1082,9 @@ with tabs[1]:
         - Evolução temporal
         - Distribuição por município
 
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná.
+        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
+
+        Os dados são provenientes do arquivo Alertas_Vale_Ribeira.csv.
         """)
         st.markdown(
             "**Fonte Geral da Seção:** MapBiomas Alerta. Dados extraídos e compilados.",
@@ -1006,41 +1154,14 @@ with tabs[1]:
                     - Hover mostra quantidade de alertas e área total
                     - Inclui todos os 7 municípios da região
                     - Ordenado do maior para o menor
+
+                    **Fonte:** Alertas_Vale_Ribeira.csv.
                     """)
             else:
                 st.info("Nenhum alerta encontrado nos municípios do Vale do Ribeira para o período selecionado.")
 
-    with col_charts2:
-        st.subheader("Mapa de Alertas de Desmatamento")
-        if not df_alertas_vale.empty:
-            fig_mapa = fig_mapa_alertas_desmatamento(df_alertas_vale)
-            if fig_mapa and fig_mapa.data:
-                st.plotly_chart(fig_mapa, use_container_width=True, height=400, key="mapa_desmatamento")
-                st.caption("Figura 2.3: Mapa de alertas de desmatamento por município do Vale do Ribeira.")
-                with st.expander("Detalhes e Fonte da Figura 2.3"):
-                    st.write("""
-                    **Interpretação:**
-                    O mapa mostra a distribuição espacial dos alertas de desmatamento por município do Vale do Ribeira.
-
-                    **Observações:**
-                    - Tamanho dos marcadores proporcional à área total de alertas
-                    - Cor dos marcadores indica intensidade (escala Viridis)
-                    - Hover mostra município, área total e quantidade de alertas
-                    - Coordenadas aproximadas dos centros municipais
-
-                    **Limitações:**
-                    - Posições são centros aproximados dos municípios
-                    - Não mostra a localização exata dos alertas individuais
-                    - Para análise espacial detalhada, utilize dados geográficos completos
-                    """)
-            else:
-                st.info("Dados insuficientes para gerar o mapa.")
-        else:
-            st.warning("Dados de alertas não disponíveis para o mapa.")
-
     st.divider()
 
-    # Gráfico temporal ocupando largura completa
     st.subheader("Evolução Temporal de Alertas")
     if not df_alertas_vale.empty:
         fig_desmat_temp = fig_desmatamento_temporal_csv(df_alertas_vale)
@@ -1057,6 +1178,8 @@ with tabs[1]:
                 - Pontos marcam cada mês com dados
                 - Valores exibidos sobre os pontos
                 - Agregação mensal da área de alertas
+
+                **Fonte:** Alertas_Vale_Ribeira.csv.
                 """)
         else:
             st.info("Dados temporais não disponíveis para este gráfico.")
@@ -1104,6 +1227,8 @@ with tabs[1]:
                 - Qtd Alertas: Número total de alertas
                 - Área Média: Área média por alerta (ha)
                 - Ano Min/Max: Período de abrangência dos dados
+
+                **Fonte:** Alertas_Vale_Ribeira.csv.
                 """)
 
         else:
@@ -1124,6 +1249,8 @@ with tabs[2]:
         - Evolução temporal
 
         **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
+
+        Os dados são provenientes do arquivo Risco_Fogo.csv.
         """)
         st.markdown(
             "**Fonte Geral da Seção:** INPE – Programa Queimadas, 2025.",
@@ -1219,3 +1346,79 @@ with tabs[2]:
             st.info("Sem dados válidos para este ranking.")
     else:
         st.error("Não foi possível carregar os dados de queimadas. Verifique se o arquivo Risco_Fogo.csv está disponível.")
+
+# -- ABA Processos ---
+
+with tabs[3]:
+    st.header("Processos Judiciais")
+    
+    with st.expander("ℹ️ Sobre esta seção", expanded=True):
+        st.write("""
+        Esta análise apresenta dados sobre processos judiciais ambientais no Vale do Ribeira (PR):
+        - Principais motivações/assuntos
+        - Evolução temporal dos ajuizamentos
+
+        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
+
+        Os dados são provenientes do arquivo processos_ambientais_vale_do_ribeira_pr.csv.
+        """)
+        st.markdown(
+            "**Fonte Geral da Seção:** CONSELHO NACIONAL DE JUSTIÇA (CNJ).",
+            unsafe_allow_html=True
+        )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Principais Motivações dos Processos")
+        if not df_processos.empty:
+            fig2 = fig_ranking_assuntos(df_processos)
+            st.plotly_chart(fig2, use_container_width=True)
+            st.caption("Figura 4.1: Top 10 assuntos mais recorrentes nos processos judiciais.")
+        else:
+            st.warning("Dados não disponíveis")
+
+    with col2:
+        st.subheader("Classes Processuais")
+        if not df_processos.empty:
+            graficos = criar_graficos_processos(df_processos)
+            if 'classes' in graficos:
+                st.plotly_chart(graficos['classes'], use_container_width=True)
+                st.caption("Figura 4.2: Top 10 classes processuais mais frequentes.")
+            else:
+                st.warning("Dados de classes processuais não disponíveis")
+
+    st.divider()
+                
+    st.subheader("Histórico de Ajuizamento de Ações") 
+    if not df_processos.empty:
+        fig3 = fig_evolucao_temporal_processos(df_processos)
+        st.plotly_chart(fig3, use_container_width=True)
+        st.caption("Figura 4.3: Evolução anual da quantidade de novos processos ajuizados.")
+    else:
+        st.warning("Dados não disponíveis")
+
+    st.divider()
+
+    st.subheader("Ranking de Processos por Município")
+    if not df_processos.empty:
+        df_ranking = df_processos.groupby('municipio').agg({
+            'data_ajuizamento': ['count', 'min', 'max']
+        }).round(2)
+
+df_ranking.columns = ['Total Processos', 'Data Inicial', 'Data Final']
+df_ranking = df_ranking.reset_index()
+df_ranking = df_ranking.sort_values('Total Processos', ascending=False)
+df_ranking.insert(0, 'Posição', range(1, len(df_ranking) + 1))
+
+df_ranking['Data Inicial'] = pd.to_datetime(df_ranking['Data Inicial']).dt.strftime('%d/%m/%Y')
+df_ranking['Data Final'] = pd.to_datetime(df_ranking['Data Final']).dt.strftime('%d/%m/%Y')
+
+st.dataframe(
+    df_ranking,
+    use_container_width=True,
+    hide_index=True,
+    height=400
+)
+
+st.caption("Tabela 4.1: Ranking de municípios por quantidade de processos judiciais.")
