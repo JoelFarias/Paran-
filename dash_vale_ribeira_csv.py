@@ -1,13 +1,15 @@
 import streamlit as st
+import geopandas as gpd
 import pandas as pd
-import numpy as np
+from typing import List, Optional, Tuple
 import plotly.express as px
 import plotly.graph_objects as go
-import textwrap
+import plotly.io as pio
 import unicodedata
-import warnings
 import os
-from typing import List, Optional, Tuple
+import numpy as np
+import warnings
+import textwrap
 
 warnings.filterwarnings('ignore')
 
@@ -15,44 +17,57 @@ st.set_page_config(
     page_title="Dashboard Vale do Ribeira - PR",
     page_icon="🌳",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown("""
 <style>
+/* ---------- Fundo geral do app ---------- */
 [data-testid="stAppViewContainer"] {
-    background-color: #f8f8fc;
+    background-color: #fefcf9;
     padding: 2rem;
     font-family: 'Segoe UI', sans-serif;
     color: #333333;
 }
 
+/* ---------- Sidebar ---------- */
+[data-testid="stSidebar"] {
+    background-color: #f3f0eb;
+    border-right: 2px solid #d8d2ca;
+}
+[data-testid="stSidebar"] > div {
+    padding: 1rem;
+}
+
+/* ---------- Botões ---------- */
 .stButton > button {
-    background-color: #e6f2ff;
-    color: #2c3e50;
-    border: 2px solid #bde0ff;
+    background-color: #cbe4d2;
+    color: #2d3a2f;
+    border: 2px solid #a6c4b2;
     border-radius: 10px;
     padding: 0.5rem 1rem;
     font-weight: bold;
     transition: all 0.3s ease-in-out;
 }
 .stButton > button:hover {
-    background-color: #cce7ff;
-    color: #1a252f;
+    background-color: #b4d6c1;
+    color: #1e2a21;
 }
 
+/* ---------- Títulos e textos ---------- */
 h1, h2, h3 {
     color: #4a4a4a;
 }
 h1 {
     font-size: 2.2rem;
-    border-bottom: 2px solid #e6e6fa;
+    border-bottom: 2px solid #d8d2ca;
     padding-bottom: 0.5rem;
     margin-bottom: 1rem;
 }
 
+/* ---------- Tabs ---------- */
 .stTabs [data-baseweb="tab"] {
-    background-color: #f0f0f8;
+    background-color: #ebe7e1;
     color: #333;
     border-radius: 0.5rem 0.5rem 0 0;
     padding: 0.5rem 1rem;
@@ -61,28 +76,30 @@ h1 {
     border: none;
 }
 .stTabs [aria-selected="true"] {
-    background-color: #e6e6fa;
+    background-color: #d6ccc2;
     color: #111;
 }
 
+/* ---------- Expander ---------- */
 .stExpander > details {
-    background-color: #f5f5ff;
-    border: 1px solid #e0e0f0;
+    background-color: #f2eee9;
+    border: 1px solid #ddd3c7;
     border-radius: 0.5rem;
 }
 </style>
 """, unsafe_allow_html=True)
 
-CUSTOM_COLORS = ["#B4C7E7", "#F4B2B0", "#B5E7A0", "#FFD1DC", "#C2A5F5", "#A8DADC", "#F7D794", "#D4A574", "#B2E6CE", "#F9E79F"]
+# ======================= CONFIGURAÇÕES =======================
+
+CUSTOM_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"]
 
 def apply_palette(fig: go.Figure, palette: str = "custom") -> go.Figure:
     seq = CUSTOM_COLORS
     for i, trace in enumerate(fig.data):
         if hasattr(trace, 'marker'):
-            if hasattr(trace.marker, 'color') and trace.marker.color is None:
-                trace.marker.color = seq[i % len(seq)]
-            elif isinstance(trace.marker.color, list):
-                trace.marker.color = [seq[i % len(seq)] for i in range(len(trace.marker.color))]
+            if hasattr(trace.marker, 'color'):
+                if trace.marker.color is None:
+                    trace.marker.color = seq[i % len(seq)]
         elif hasattr(trace, 'line'):
             if hasattr(trace.line, 'color') and trace.line.color is None:
                 trace.line.color = seq[i % len(seq)]
@@ -92,35 +109,48 @@ def _apply_layout(fig: go.Figure, title: str, title_size: int = 16) -> go.Figure
     fig = apply_palette(fig)
     fig.update_layout(
         template="plotly_white",
-        title={
-            "text": title,
-            "x": 0.5,
-            "xanchor": "center",
-            "font_size": title_size
-        },
-        paper_bgcolor="white",   
-        plot_bgcolor="white",     
+        title={"text": title, "x": 0.5, "xanchor": "center", "font_size": title_size},
+        paper_bgcolor="white",
+        plot_bgcolor="white",
         margin=dict(l=20, r=20, t=50, b=20),
         hovermode="x unified",
-        legend=dict(
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="#CCC",
-            borderwidth=1,
-            font=dict(size=10)
-        )
+        legend=dict(bgcolor="rgba(255,255,255,0.8)", bordercolor="#CCC", borderwidth=1, font=dict(size=10))
     )
     return fig
 
+def preparar_hectares(gdf_cnuc: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    if gdf_cnuc.empty:
+        return gpd.GeoDataFrame()
+    gdf_ha = gdf_cnuc.copy()
+    cols_area = ['area_km2', 'alerta_km2', 'sigef_km2']
+    for col in cols_area:
+        if col in gdf_ha.columns:
+            gdf_ha[f"{col.replace('_km2', '_ha')}"] = pd.to_numeric(gdf_ha[col], errors='coerce').fillna(0) * 100
+    return gdf_ha
+
 def wrap_label(name, width=30):
-    if pd.isna(name): 
-        return ""
+    if pd.isna(name): return ""
     return "<br>".join(textwrap.wrap(str(name), width))
 
-def truncate_text(text, max_chars=25):
-    if pd.isna(text): 
-        return ""
-    text = str(text)
-    return text if len(text) <= max_chars else text[:max_chars-3] + "..."
+def truncate_label(name, max_length=20):
+    if pd.isna(name): return ""
+    name_str = str(name)
+    return name_str[:max_length] + "..." if len(name_str) > max_length else name_str
+
+# ======================= FUNÇÕES AUXILIARES =======================
+
+def load_data(filepath):
+    try:
+        df = pd.read_csv(filepath, delimiter=';')
+        df['data_ajuizamento'] = pd.to_datetime(df['data_ajuizamento'], format='%d/%m/%Y', errors='coerce')
+        df.dropna(subset=['data_ajuizamento'], inplace=True)
+        return df
+    except FileNotFoundError:
+        st.error(f"Arquivo não encontrado: {filepath}. Certifique-se de que o arquivo está na mesma pasta que o script.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar o arquivo: {e}")
+        return pd.DataFrame()
 
 def normalizar_string(s):
     if pd.isna(s): return ""
@@ -129,36 +159,94 @@ def normalizar_string(s):
     s = ''.join(char for char in s if unicodedata.category(char) != 'Mn')
     return s.upper()
 
-@st.cache_data
-def carregar_csv(caminho: str) -> pd.DataFrame:
+def verificar_e_reprojetar(gdf, target_crs="EPSG:31983"):
+    if gdf.empty:
+        return gdf
+    if gdf.crs is None:
+        gdf = gdf.set_crs("EPSG:4326")
+    if gdf.crs.to_string() != target_crs:
+        gdf = gdf.to_crs(target_crs)
+    return gdf
+
+def carregar_shapefile(caminho: str) -> gpd.GeoDataFrame:
     try:
         if not os.path.exists(caminho):
-            st.error(f"Arquivo não encontrado: {caminho}")
-            return pd.DataFrame()
-        
-        df = pd.read_csv(caminho, encoding='utf-8')
-        return df
-    except UnicodeDecodeError:
-        try:
-            df = pd.read_csv(caminho, encoding='latin-1')
-            return df
-        except Exception as e:
-            st.error(f"Erro ao carregar {caminho} com encoding latin-1: {e}")
-            return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Erro ao carregar {caminho}: {e}")
-        return pd.DataFrame()
+            st.warning(f"Arquivo não encontrado: {caminho}")
+            return gpd.GeoDataFrame(columns=['geometry']).set_crs("EPSG:4326")
 
-def filtrar_alertas_vale_ribeira(df_alertas):
-    municipios_vale = [
-        "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
-        "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"
-    ]
+        gdf = gpd.read_file(caminho)
+        if gdf.empty:
+            st.warning(f"Shapefile vazio: {caminho}")
+            return gpd.GeoDataFrame(columns=['geometry']).set_crs("EPSG:4326")
+
+        gdf.columns = [str(col).lower() for col in gdf.columns]
+
+        if 'nome_uc' not in gdf.columns:
+            if 'nome' in gdf.columns:
+                gdf = gdf.rename(columns={'nome': 'nome_uc'})
+            elif 'cnuc' in caminho:
+                gdf['nome_uc'] = [f"UC_{i}" for i in range(len(gdf))]
+
+        if 'municipio' not in gdf.columns:
+            if 'município' in gdf.columns:
+                gdf = gdf.rename(columns={'município': 'municipio'})
+            elif 'nm_mun' in gdf.columns: 
+                gdf = gdf.rename(columns={'nm_mun': 'municipio'})
+
+        gdf["geometry"] = gdf["geometry"].make_valid()
+        gdf = gdf[gdf["geometry"].notnull() & ~gdf["geometry"].is_empty].copy()
+        gdf['id'] = range(len(gdf))
+
+        try:
+            gdf_proj = gdf.to_crs("EPSG:31983")
+            area_calc_km2 = gdf_proj.geometry.area / 1e6
+            if "area_km2" not in gdf.columns:
+                gdf["area_km2"] = area_calc_km2
+            else:
+                gdf["area_km2"] = pd.to_numeric(gdf["area_km2"], errors='coerce').fillna(area_calc_km2)
+        except Exception as e:
+            st.warning(f"Não foi possível calcular a área para {caminho}: {e}")
+            if "area_km2" not in gdf.columns:
+                gdf["area_km2"] = 0
+
+        for col in ['alerta_km2', 'sigef_km2', 'c_alertas', 'c_sigef', 'ha_total', 'areaha']:
+            if col not in gdf.columns:
+                gdf[col] = 0
+            else:
+                gdf[col] = pd.to_numeric(gdf[col], errors='coerce').fillna(0)
+        
+        if 'ha_total' in gdf.columns and gdf['ha_total'].sum() == 0 and 'area_km2' in gdf.columns:
+            gdf['ha_total'] = gdf['area_km2'] * 100
+        
+        return gdf.to_crs("EPSG:4326")
+
+    except Exception as e:
+        st.error(f"Erro fatal ao carregar {caminho}: {e}")
+        return gpd.GeoDataFrame(columns=['geometry']).set_crs("EPSG:4326")
+
+def carregar_kmls_cars():
+    municipios_cars = {}
+    total_cars = 0
+    municipios_vale = ["Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"]
     
-    if df_alertas.empty or 'MUNICIPIO' not in df_alertas.columns:
-        return pd.DataFrame()
-    
-    return df_alertas[df_alertas['MUNICIPIO'].isin(municipios_vale)].copy()
+    for municipio in municipios_vale:
+        caminho_kml = f"{municipio}.kml"
+        try:
+            if os.path.exists(caminho_kml):
+                gdf_kml = gpd.read_file(caminho_kml, driver='KML')
+                if not gdf_kml.empty and 'geometry' in gdf_kml.columns:
+                    gdf_proj = gdf_kml.to_crs("EPSG:31983")
+                    area_total = gdf_proj.geometry.area.sum() / 10_000  # ha
+                    municipios_cars[municipio] = area_total
+                    total_cars += len(gdf_kml)
+                else:
+                    municipios_cars[municipio] = 0
+            else:
+                municipios_cars[municipio] = 0
+        except Exception as e:
+            st.warning(f"Erro ao carregar KML de {municipio}: {e}")
+            municipios_cars[municipio] = 0
+    return municipios_cars, total_cars
 
 def filtrar_queimadas_vale_ribeira(df_queimadas):
     municipios_vale = [
@@ -169,11 +257,483 @@ def filtrar_queimadas_vale_ribeira(df_queimadas):
     if df_queimadas.empty or 'Municipio' not in df_queimadas.columns:
         return pd.DataFrame()
     
-    # Normalizar nomes dos municípios
     df_queimadas = df_queimadas.copy()
     df_queimadas['Municipio_norm'] = df_queimadas['Municipio'].str.upper().str.strip()
     
     return df_queimadas[df_queimadas['Municipio_norm'].isin(municipios_vale)].copy()
+
+def criar_figura(gdf_cnuc_filtered, centro, ids_selecionados=None):
+    try:
+        if gdf_cnuc_filtered is None or gdf_cnuc_filtered.empty:
+            return go.Figure()
+
+        hover_cols = ['nome_uc', 'municipio', 'area_km2', 'alerta_km2', 'sigef_km2']
+        custom_data = gdf_cnuc_filtered[hover_cols].fillna('N/A').values
+
+        fig = go.Figure(go.Choroplethmapbox(
+            geojson=gdf_cnuc_filtered.__geo_interface__,
+            locations=gdf_cnuc_filtered.index,
+            z=np.ones(len(gdf_cnuc_filtered)),
+            colorscale=[[0, "#636EFA"], [1, "#636EFA"]], showscale=False,
+            marker_opacity=0.5, marker_line_width=1,
+            customdata=custom_data,
+            hovertemplate="<b>%{customdata[0]}</b><br>Município: %{customdata[1]}<br>Área: %{customdata[2]:.2f} km²<br>Alertas: %{customdata[3]:.2f} km²<br>CAR: %{customdata[4]:.2f} km²<extra></extra>"
+        ))
+
+        if ids_selecionados:
+             gdf_destaque = gdf_cnuc_filtered[gdf_cnuc_filtered['id'].isin(ids_selecionados)]
+             if not gdf_destaque.empty:
+                 custom_data_destaque = gdf_destaque[hover_cols].fillna('N/A').values
+                 fig.add_trace(go.Choroplethmapbox(
+                    geojson=gdf_destaque.__geo_interface__, locations=gdf_destaque.index,
+                    z=np.ones(len(gdf_destaque)), colorscale=[[0, "#EF553B"], [1, "#EF553B"]],
+                    showscale=False, marker_opacity=0.7, marker_line_width=2,
+                    customdata=custom_data_destaque,
+                    hovertemplate="<b>%{customdata[0]}</b> (SOBREPOSTA)<br>Município: %{customdata[1]}<br>Área: %{customdata[2]:.2f} km²<extra></extra>"
+                 ))
+
+        fig.update_layout(
+            mapbox=dict(style="open-street-map", zoom=7, center=centro),
+            showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=600,
+        )
+        return fig
+    except Exception as e:
+        st.error(f"Erro ao criar mapa: {e}")
+        return go.Figure()
+
+# ======================= FUNÇÕES DE GRÁFICOS =======================
+
+def fig_grafico_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef):
+    if gdf_cnuc.empty: return go.Figure()
+    
+    dados_uc = []
+    
+    try:
+        gdf_cnuc_proj = gdf_cnuc.to_crs("EPSG:31983")
+        
+        for _, uc in gdf_cnuc.iterrows():
+            nome_uc = uc['nome_uc']
+            if 'area_ha' in uc and pd.notna(uc['area_ha']) and uc['area_ha'] > 0:
+                area_uc = uc['area_ha']
+            elif 'area_km2' in uc:
+                area_uc = pd.to_numeric(uc['area_km2'], errors='coerce') * 100 if pd.notna(uc['area_km2']) else 0
+            else:
+                area_uc = 0
+            
+            area_alertas = 0
+            if not gdf_alertas.empty and 'areaha' in gdf_alertas.columns:
+                try:
+                    uc_geom = gdf_cnuc_proj[gdf_cnuc_proj['nome_uc'] == nome_uc].geometry.iloc[0]
+                    alertas_proj = gdf_alertas.to_crs("EPSG:31983")
+                    alertas_intersect = alertas_proj[alertas_proj.geometry.intersects(uc_geom)]
+                    if not alertas_intersect.empty:
+                        area_alertas = pd.to_numeric(alertas_intersect['areaha'], errors='coerce').fillna(0).sum()
+                except Exception:
+                    pass
+            
+            area_sigef = 0
+            if not gdf_sigef.empty:
+                try:
+                    uc_geom = gdf_cnuc_proj[gdf_cnuc_proj['nome_uc'] == nome_uc].geometry.iloc[0]
+                    sigef_proj = gdf_sigef.to_crs("EPSG:31983")
+                    sigef_intersect = sigef_proj[sigef_proj.geometry.intersects(uc_geom)]
+                    if not sigef_intersect.empty:
+                        area_sigef = sigef_intersect.geometry.area.sum() / 10000 
+                except Exception:
+                    pass
+            
+            if area_alertas > 0 or area_sigef > 0:
+                # Simplificar nomes longos
+                nome_simplificado = str(nome_uc)
+                nome_simplificado = nome_simplificado.replace('Reserva Particular do Patrimônio Natural', 'RPPN')
+                nome_simplificado = nome_simplificado.replace('Área de Proteção Ambiental', 'APA')
+                nome_simplificado = nome_simplificado.replace('Parque Nacional', 'PN')
+                nome_simplificado = nome_simplificado.replace('Parque Estadual', 'PE')
+                nome_simplificado = nome_simplificado.replace('Reserva Biológica', 'REBIO')
+                nome_simplificado = nome_simplificado.replace('Estação Ecológica', 'ESEC')
+                
+                dados_uc.append({
+                    'UC': wrap_label(nome_simplificado, 8),
+                    'UC_original': nome_uc,
+                    'Alertas': round(area_alertas, 2),
+                    'SIGEF': round(area_sigef, 2),
+                    'Total': round(area_alertas + area_sigef, 2)
+                })
+    
+    except Exception:
+        pass
+    
+    if not dados_uc:
+        fig = go.Figure()
+        fig.update_layout(
+            title='UCs com Sobreposições (Alertas e SIGEF)',
+            height=450
+        )
+        return fig
+    
+    df = pd.DataFrame(dados_uc).sort_values('Total', ascending=False)
+    df_long = pd.melt(df, id_vars=['UC', 'UC_original'], value_vars=['Alertas', 'SIGEF'], var_name='Tipo', value_name='Área (ha)')
+    
+    fig = px.bar(df_long, x='UC', y='Área (ha)', color='Tipo', barmode='stack',
+                 hover_data={'UC_original': True})
+    fig.update_traces(texttemplate='%{y:.1f}', textposition='inside', textfont_size=10,
+                     hovertemplate='<b>%{customdata[0]}</b><br>%{fullData.name}: %{y:.1f} ha<extra></extra>')
+    fig.update_layout(
+        xaxis_tickangle=0, 
+        xaxis_tickfont_size=8, 
+        height=450,
+        yaxis_title='Área (ha)',
+        yaxis_type='log',
+        xaxis=dict(tickmode='linear', dtick=1)
+    )
+    return _apply_layout(fig, title='UCs com Sobreposições (Alertas e SIGEF)', title_size=16)
+
+def fig_ucs_por_municipio(gdf_cnuc: gpd.GeoDataFrame) -> go.Figure:
+    if gdf_cnuc.empty or 'municipio' not in gdf_cnuc.columns:
+        return go.Figure()
+    
+    municipio_stats = gdf_cnuc.groupby('municipio').agg({
+        'nome_uc': 'count',
+        'area_km2': 'sum'
+    }).reset_index()
+    municipio_stats.columns = ['Município', 'Quantidade_UCs', 'Área_Total_km2']
+    municipio_stats['Área_Total_ha'] = municipio_stats['Área_Total_km2'] * 100
+    municipio_stats = municipio_stats.sort_values('Quantidade_UCs', ascending=False)
+    
+    if municipio_stats.empty:
+        return go.Figure()
+    
+    # Quebrar nomes longos em múltiplas linhas
+    municipio_stats['Município_wrap'] = municipio_stats['Município'].apply(lambda x: wrap_label(str(x), 12))
+    
+    fig = px.bar(municipio_stats, 
+                 x='Município_wrap', 
+                 y='Quantidade_UCs',
+                 text='Quantidade_UCs',
+                 hover_data={'Área_Total_ha': ':,.0f'})
+    
+    fig.update_traces(
+        texttemplate='%{text}', 
+        textposition='outside',
+        hovertemplate='<b>%{customdata[1]}</b><br>UCs: %{y}<br>Área Total: %{customdata[0]:,.0f} ha<extra></extra>',
+        customdata=municipio_stats[['Área_Total_ha', 'Município']].values
+    )
+    
+    fig.update_layout(
+        xaxis_tickangle=0,
+        xaxis_title='Município',
+        yaxis_title='Quantidade de UCs',
+        height=400
+    )
+    
+    return _apply_layout(fig, title='Distribuição de UCs por Município', title_size=16)
+
+def fig_car_por_uc_donut(gdf_cnuc: gpd.GeoDataFrame, gdf_sigef: gpd.GeoDataFrame, nome_uc: str, modo_valor: str) -> go.Figure:
+    if gdf_cnuc.empty: 
+        return go.Figure()
+    
+    try:
+        gdf_cnuc_proj = gdf_cnuc.to_crs("EPSG:31983") if not gdf_cnuc.empty else gpd.GeoDataFrame()
+        gdf_sigef_proj = gdf_sigef.to_crs("EPSG:31983") if not gdf_sigef.empty else gpd.GeoDataFrame()
+        
+        if nome_uc == "Todas":
+            area_total = pd.to_numeric(gdf_cnuc['area_km2'], errors='coerce').fillna(0).sum() * 100
+            area_sigef_total = 0
+            
+            if not gdf_sigef_proj.empty:
+                try:
+                    sigef_in_ucs = gpd.sjoin(gdf_sigef_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
+                    if not sigef_in_ucs.empty:
+                        area_sigef_total = sigef_in_ucs.geometry.area.sum() / 10000
+                except Exception:
+                    pass
+        else:
+            uc_row = gdf_cnuc[gdf_cnuc['nome_uc'] == nome_uc]
+            if uc_row.empty: 
+                return go.Figure()
+            
+            area_total = pd.to_numeric(uc_row['area_km2'].iloc[0], errors='coerce')
+            area_total = (area_total * 100) if pd.notna(area_total) and area_total > 0 else 0
+            area_sigef_total = 0
+            
+            if not gdf_sigef_proj.empty and area_total > 0:
+                try:
+                    uc_geom = gdf_cnuc_proj[gdf_cnuc_proj['nome_uc'] == nome_uc].geometry.iloc[0]
+                    sigef_intersect = gdf_sigef_proj[gdf_sigef_proj.geometry.intersects(uc_geom)]
+                    if not sigef_intersect.empty:
+                        area_sigef_total = sigef_intersect.geometry.area.sum() / 10000
+                except Exception:
+                    pass
+        
+        if area_total <= 0:
+            return go.Figure()
+            
+        area_sigef_total = max(0, area_sigef_total)
+        restante = max(0, area_total - area_sigef_total)
+        percentual = (area_sigef_total / area_total) * 100 if area_total > 0 else 0
+        
+        if modo_valor == "percent":
+            center_text = f"{percentual:.1f}%"
+            textinfo = "label+percent"
+        else:
+            center_text = f"{area_sigef_total:,.0f} ha"
+            textinfo = "label+value"
+        
+        if area_total > 0:
+            fig = go.Figure(data=[go.Pie(
+                labels=["SIGEF/CAR", "Área livre da UC"], 
+                values=[area_sigef_total, restante],
+                hole=0.6, 
+                marker_colors=["#2ca02c", "#e8f5e8"], 
+                textinfo="none",
+                hovertemplate="<b>%{label}</b><br>Área: %{value:,.0f} ha<br>Percentual: %{percent}<extra></extra>"
+            )])
+            
+            fig.update_layout(
+                annotations=[
+                    dict(
+                        text=center_text, 
+                        x=0.5, y=0.52, 
+                        font_size=20, 
+                        showarrow=False,
+                        font_color="#333",
+                        font_weight="bold"
+                    ),
+                    dict(
+                        text=f"Total: {area_total:,.0f} ha", 
+                        x=0.5, y=0.48, 
+                        font_size=12, 
+                        showarrow=False,
+                        font_color="#666"
+                    )
+                ],
+                height=400,
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
+            )
+            
+            return _apply_layout(fig, title=f"SIGEF/CAR em: {nome_uc}", title_size=16)
+        else:
+            return go.Figure()
+            
+    except Exception as e:
+        st.warning(f"Erro ao criar gráfico de rosca: {e}")
+        return go.Figure()
+
+def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
+    municipios_dados = set()
+    
+    if not gdf_cnuc.empty and 'municipio' in gdf_cnuc.columns:
+        municipios_dados.update(gdf_cnuc['municipio'].dropna().unique())
+    
+    if not gdf_alertas.empty and 'municipio' in gdf_alertas.columns:
+        municipios_dados.update(gdf_alertas['municipio'].dropna().unique())
+    
+    if not municipios_dados:
+        st.info("Não há dados de municípios disponíveis.")
+        return
+    
+    municipios_lista = sorted(list(municipios_dados))
+    df = pd.DataFrame(index=municipios_lista)
+
+    if not gdf_alertas.empty and 'municipio' in gdf_alertas.columns and 'areaha' in gdf_alertas.columns:
+        alertas_data = gdf_alertas.groupby('municipio')['areaha'].sum()
+        df['Alertas (ha)'] = df.index.map(alertas_data).fillna(0)
+    else:
+        df['Alertas (ha)'] = 0
+
+    if not gdf_cnuc.empty and 'municipio' in gdf_cnuc.columns:
+        if 'area_km2' in gdf_cnuc.columns:
+            cnuc_data = gdf_cnuc.groupby('municipio')['area_km2'].sum() * 100
+            df['UCs (ha)'] = df.index.map(cnuc_data).fillna(0)
+        else:
+            df['UCs (ha)'] = 0
+    else:
+        df['UCs (ha)'] = 0
+    if not gdf_sigef.empty:
+        try:
+            gdf_sigef_proj = gdf_sigef.to_crs("EPSG:31983")
+            area_total_sigef = gdf_sigef_proj.geometry.area.sum() / 10000
+            df['SIGEF (ha)'] = area_total_sigef / len(df) if len(df) > 0 else 0
+        except Exception:
+            df['SIGEF (ha)'] = 0
+    else:
+        df['SIGEF (ha)'] = 0
+    
+    df.loc['TOTAL'] = df.sum()
+    
+    st.dataframe(df.round(1), use_container_width=True)
+
+def fig_desmatamento_uc(gdf_cnuc, gdf_alertas) -> go.Figure:
+    if gdf_alertas.empty: 
+        return go.Figure()
+    
+    try:
+        gdf_alertas = gdf_alertas.copy()
+        gdf_alertas['areaha'] = pd.to_numeric(gdf_alertas['areaha'], errors='coerce').fillna(0)
+
+        gdf_alertas = gdf_alertas[gdf_alertas['areaha'] > 0]
+        
+        if gdf_alertas.empty:
+            return go.Figure()
+        if 'municipio' in gdf_alertas.columns:
+            alert_area = gdf_alertas.groupby('municipio')['areaha'].sum().reset_index()
+            alert_area.columns = ['Local', 'area_total']
+        else:
+            if 'anodetec' in gdf_alertas.columns:
+                alert_area = gdf_alertas.groupby('anodetec')['areaha'].sum().reset_index()
+                alert_area.columns = ['Local', 'area_total']
+                alert_area['Local'] = alert_area['Local'].astype(str)
+            else:
+                alert_area = pd.DataFrame({
+                    'Local': ['Total da Região'],
+                    'area_total': [gdf_alertas['areaha'].sum()]
+                })
+        
+        alert_area = alert_area.sort_values('area_total', ascending=False)
+        
+        if alert_area.empty or alert_area['area_total'].sum() == 0:
+            return go.Figure()
+        
+        alert_area['local_wrap'] = alert_area['Local'].apply(lambda x: truncate_label(str(x), 15))
+        
+        fig = px.bar(alert_area, x='local_wrap', y='area_total', text='area_total')
+        fig.update_traces(texttemplate="%{text:,.1f}", textposition="outside")
+        fig.update_layout(
+            xaxis_title="Localização",
+            yaxis_title="Área de Alertas (ha)",
+            xaxis_tickangle=-45,
+            height=400
+        )
+        
+        return _apply_layout(fig, title="Área de Alertas por Localização", title_size=16)
+        
+    except Exception as e:
+        st.warning(f"Erro ao criar gráfico de desmatamento: {e}")
+        return go.Figure()
+
+def fig_mapa_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef, centro, uc_selecionada=None) -> go.Figure:
+    fig = go.Figure()
+    
+    if gdf_cnuc.empty:
+        return fig
+    
+    try:
+        gdf_cnuc_proj = gdf_cnuc.to_crs("EPSG:31983")
+        
+        if not gdf_alertas.empty:
+            gdf_alertas_proj = gdf_alertas.to_crs("EPSG:31983")
+            alertas_que_tocam = gpd.sjoin(gdf_alertas_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
+            if not alertas_que_tocam.empty:
+                alertas_que_tocam = alertas_que_tocam.to_crs("EPSG:4326")
+                area_col = 'areaha_left' if 'areaha_left' in alertas_que_tocam.columns else 'areaha'
+                if area_col in alertas_que_tocam.columns:
+                    fig.add_trace(go.Choroplethmapbox(
+                        geojson=alertas_que_tocam.__geo_interface__, locations=alertas_que_tocam.index,
+                        z=pd.to_numeric(alertas_que_tocam[area_col], errors='coerce').fillna(0),
+                        colorscale="Reds", showscale=False, marker_opacity=0.6, marker_line_width=1,
+                        name="Alertas", hovertemplate="<b>Alerta:</b> %{z:.2f} ha<br><b>UC:</b> %{customdata}<extra></extra>",
+                        customdata=alertas_que_tocam['nome_uc'].fillna('N/A')
+                    ))
+        
+        # SIGEF que toca UCs
+        if not gdf_sigef.empty:
+            gdf_sigef_proj = gdf_sigef.to_crs("EPSG:31983")
+            sigef_que_toca = gpd.sjoin(gdf_sigef_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
+            if not sigef_que_toca.empty:
+                sigef_que_toca = sigef_que_toca.to_crs("EPSG:4326")
+                fig.add_trace(go.Choroplethmapbox(
+                    geojson=sigef_que_toca.__geo_interface__, locations=sigef_que_toca.index,
+                    z=np.ones(len(sigef_que_toca)), colorscale=[[0, "green"], [1, "green"]],
+                    showscale=False, marker_opacity=0.2, marker_line_width=1,
+                    name="SIGEF", hovertemplate="<b>SIGEF</b><br><b>UC:</b> %{customdata}<extra></extra>",
+                    customdata=sigef_que_toca['nome_uc'].fillna('N/A')
+                ))
+    
+    except Exception as e:
+        st.warning(f"Erro ao processar dados: {e}")
+    
+    # UCs por cima (sempre mostrar)
+    fig.add_trace(go.Choroplethmapbox(
+        geojson=gdf_cnuc.__geo_interface__, locations=gdf_cnuc.index,
+        z=np.ones(len(gdf_cnuc)), colorscale=[[0, "blue"], [1, "blue"]],
+        showscale=False, marker_opacity=0.2, marker_line_width=2,
+        name="UCs", hovertemplate="<b>UC:</b> %{customdata}<extra></extra>",
+        customdata=gdf_cnuc['nome_uc'].fillna('N/A')
+    ))
+    
+    # Ajustar zoom e centro baseado na UC selecionada
+    zoom_level = 8
+    map_center = centro
+    
+    # Se uma UC específica foi selecionada, focar nela
+    if uc_selecionada and uc_selecionada != "Todas":
+        try:
+            uc_filtrada = gdf_cnuc[gdf_cnuc['nome_uc'] == uc_selecionada]
+            if not uc_filtrada.empty:
+                uc_bounds = uc_filtrada.total_bounds
+                map_center = {"lat": (uc_bounds[1] + uc_bounds[3]) / 2, "lon": (uc_bounds[0] + uc_bounds[2]) / 2}
+                zoom_level = 12
+        except Exception:
+            pass
+    
+    fig.update_layout(
+        mapbox=dict(style="open-street-map", zoom=zoom_level, center=map_center),
+        margin=dict(l=0, r=0, t=30, b=0), height=600,
+        legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.8)")
+    )
+    return fig
+
+def fig_desmatamento_mapa_pontos(gdf_alertas) -> go.Figure:
+    if gdf_alertas.empty: return go.Figure()
+    
+    gdf_map = gdf_alertas.copy()
+    gdf_map['areaha'] = pd.to_numeric(gdf_map['areaha'], errors='coerce').fillna(0)
+    
+    fig = go.Figure(go.Choroplethmapbox(
+        geojson=gdf_map.__geo_interface__, locations=gdf_map.index,
+        z=gdf_map['areaha'], colorscale="Reds", showscale=True, 
+        marker_opacity=0.7, marker_line_width=1,
+        hovertemplate="<b>Área:</b> %{z:.2f} ha<extra></extra>",
+        colorbar=dict(title="Área (ha)")
+    ))
+    
+    fig.update_layout(
+        mapbox=dict(style="open-street-map", zoom=7),
+        margin=dict(l=0, r=0, t=30, b=0), height=400
+    )
+    return fig
+
+def fig_desmatamento_temporal(gdf_alertas) -> go.Figure:
+    if gdf_alertas.empty or 'anodetec' not in gdf_alertas.columns: 
+        return go.Figure()
+    
+    try:
+        df = gdf_alertas.copy()
+        df['anodetec'] = pd.to_numeric(df['anodetec'], errors='coerce')
+        df['areaha'] = pd.to_numeric(df['areaha'], errors='coerce').fillna(0)
+        
+        # Filtrar anos válidos
+        df = df.dropna(subset=['anodetec'])
+        
+        if df.empty:
+            return go.Figure()
+        
+        # Agrupar por ano
+        temporal = df.groupby('anodetec')['areaha'].agg(['sum', 'count']).reset_index()
+        temporal.columns = ['Ano', 'Área (ha)', 'Quantidade']
+        temporal = temporal.sort_values('Ano')
+        
+        fig = px.line(temporal, x='Ano', y='Área (ha)', markers=True,
+                     hover_data={'Quantidade': True})
+        fig.update_traces(texttemplate='%{y:.1f}', textposition='top center')
+        fig.update_layout(height=400)
+        
+        return _apply_layout(fig, title="Evolução Temporal dos Alertas de Desmatamento", title_size=16)
+        
+    except Exception as e:
+        st.warning(f"Erro: {e}")
+        return go.Figure()
 
 def criar_graficos_queimadas(df_queimadas):
     graficos = {}
@@ -195,7 +755,6 @@ def criar_graficos_queimadas(df_queimadas):
     
     df = df_queimadas.copy()
     
-    # Converter DataHora para datetime se necessário
     if 'DataHora' in df.columns:
         df['DataHora'] = pd.to_datetime(df['DataHora'], errors='coerce')
     
@@ -287,7 +846,6 @@ def criar_graficos_queimadas(df_queimadas):
     else:
         graficos['top_precip'] = go.Figure().update_layout(title="Municípios por Precipitação - Sem dados")
     
-    # 4. Mapa de Focos de Calor
     map_cols = ['Latitude', 'Longitude', 'RiscoFogo', 'Municipio']
     if all(col in df.columns for col in map_cols):
         df_map = df[map_cols + (['Precipitacao'] if 'Precipitacao' in df.columns else [])].copy()
@@ -302,7 +860,6 @@ def criar_graficos_queimadas(df_queimadas):
             df_map['Precipitacao'] = 0
         
         if not df_map.empty:
-            # Limitar a 10000 pontos para performance
             if len(df_map) > 10000:
                 df_map = df_map.sample(10000, random_state=42)
             
@@ -367,489 +924,6 @@ def criar_ranking_queimadas(df_queimadas, indicador):
     
     return ranking.reset_index()
 
-def criar_cards_csv(df_cnuc, df_sigef, df_alertas):
-    try:
-        municipios_vale = [
-            "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
-            "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"
-        ]
-        
-        total_municipios = 7
-        
-        if not df_cnuc.empty and 'ha_total' in df_cnuc.columns:
-            area_total_ucs_ha = pd.to_numeric(df_cnuc['ha_total'], errors='coerce').sum()
-        else:
-            area_total_ucs_ha = 0
-        
-        area_alertas_ha = 0
-        contagem_alerta = 0
-        
-        if not df_alertas.empty and 'AREAHA' in df_alertas.columns:
-            df_alertas_vale = filtrar_alertas_vale_ribeira(df_alertas)
-            if not df_alertas_vale.empty:
-                contagem_alerta = len(df_alertas_vale)
-                area_alertas_ha = pd.to_numeric(df_alertas_vale['AREAHA'], errors='coerce').sum()
-        
-        contagem_sigef = 0
-        if not df_sigef.empty:
-            contagem_sigef = len(df_sigef)
-        
-        return (
-            area_alertas_ha,
-            contagem_sigef,
-            total_municipios,
-            contagem_alerta,
-            area_total_ucs_ha
-        )
-        
-    except Exception as e:
-        st.error(f"Erro ao calcular indicadores: {e}")
-        return (0.0, 0, 7, 0, 0.0)
-
-def fig_sobreposicoes_csv(df_cnuc):
-    if df_cnuc.empty or 'nome_uc' not in df_cnuc.columns:
-        return go.Figure()
-
-    df = df_cnuc.copy()
-    
-    if 'ha_total' in df.columns:
-        df['area_ha'] = pd.to_numeric(df['ha_total'], errors='coerce')
-    else:
-        df['area_ha'] = 0
-        
-    df = df.sort_values("area_ha", ascending=False)
-    df["uc_short"] = df["nome_uc"].apply(lambda x: wrap_label(x, 15))
-    
-    fig = px.bar(
-        df,
-        x="uc_short",
-        y="area_ha",
-        labels={"area_ha":"Área (ha)","uc_short":"UC"},
-        text_auto=True,
-    )
-
-    fig.update_traces(
-        customdata=np.column_stack([df.nome_uc]),
-        hovertemplate="<b>%{customdata[0]}</b><br>Área: %{y:,.0f} ha<extra></extra>"
-    )
-
-    fig.update_xaxes(tickangle=0, tickfont=dict(size=9), title_text="")
-    fig.update_yaxes(title_text="Área (ha)", tickfont=dict(size=9))
-    fig.update_layout(height=400)
-
-    return _apply_layout(fig, title="Área das Unidades de Conservação", title_size=16)
-
-def fig_distribuicao_sigef(df_sigef: pd.DataFrame) -> go.Figure:
-    try:
-        if df_sigef.empty or 'municipio_' not in df_sigef.columns:
-            return go.Figure()
-        
-        municipios_map = {
-            4100103: "Adrianópolis",
-            4102703: "Bocaiúva do Sul", 
-            4104659: "Cerro Azul",
-            4107405: "Doutor Ulysses",
-            4111258: "Itaperuçu",
-            4122404: "Rio Branco do Sul",
-            4127700: "Tunas do Paraná"
-        }
-        
-        df_count = df_sigef['municipio_'].value_counts().reset_index()
-        df_count.columns = ['municipio_cod', 'quantidade']
-        df_count['municipio'] = df_count['municipio_cod'].map(municipios_map)
-        df_count = df_count.dropna(subset=['municipio'])
-        df_count = df_count.sort_values('quantidade', ascending=True)
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Bar(
-            y=df_count['municipio'],
-            x=df_count['quantidade'],
-            orientation='h',
-            marker_color=CUSTOM_COLORS[0],
-            text=df_count['quantidade'],
-            textposition='outside',
-            hovertemplate='<b>%{y}</b><br>Registros SIGEF: %{x}<extra></extra>'
-        ))
-        
-        fig.update_layout(
-            height=350,
-            xaxis_title="Quantidade de Registros SIGEF",
-            yaxis_title="",
-            showlegend=False
-        )
-        
-        return _apply_layout(fig, title="Distribuição de SIGEF por Município", title_size=14)
-        
-    except Exception as e:
-        st.error(f"Erro ao criar gráfico de SIGEF: {e}")
-        return go.Figure()
-
-def mostrar_tabela_unificada_csv(df_alertas, df_sigef, df_cnuc):
-    try:
-        municipios_vale = [
-            "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
-            "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"
-        ]
-        
-        municipios_map = {
-            4100103: "Adrianópolis",
-            4102703: "Bocaiúva do Sul", 
-            4104659: "Cerro Azul",
-            4107405: "Doutor Ulysses",
-            4111258: "Itaperuçu",
-            4122404: "Rio Branco do Sul",
-            4127700: "Tunas do Paraná"
-        }
-        
-        alertas_data = {}
-        if not df_alertas.empty and 'MUNICIPIO' in df_alertas.columns:
-            df_alertas_vale = filtrar_alertas_vale_ribeira(df_alertas)
-            for municipio in municipios_vale:
-                dados_mun = df_alertas_vale[df_alertas_vale['MUNICIPIO'] == municipio]
-                if not dados_mun.empty and 'AREAHA' in dados_mun.columns:
-                    area_total = pd.to_numeric(dados_mun['AREAHA'], errors='coerce').sum()
-                    alertas_data[municipio] = area_total
-                else:
-                    alertas_data[municipio] = 0
-        
-        sigef_data = {}
-        if not df_sigef.empty and 'municipio_' in df_sigef.columns:
-            for municipio in municipios_vale:
-                cod_mun = None
-                for cod, nome in municipios_map.items():
-                    if nome == municipio:
-                        cod_mun = cod
-                        break
-                
-                if cod_mun:
-                    dados_mun = df_sigef[df_sigef['municipio_'] == cod_mun]
-                    sigef_data[municipio] = len(dados_mun)
-                else:
-                    sigef_data[municipio] = 0
-        
-        cnuc_data = {}
-        if not df_cnuc.empty and 'municipio' in df_cnuc.columns:
-            for municipio in municipios_vale:
-                municipio_normalizado = municipio.upper()
-                dados_mun = df_cnuc[df_cnuc['municipio'].str.upper().str.contains(municipio_normalizado, na=False)]
-                if not dados_mun.empty and 'ha_total' in dados_mun.columns:
-                    area_total = pd.to_numeric(dados_mun['ha_total'], errors='coerce').sum()
-                    cnuc_data[municipio] = area_total
-                else:
-                    cnuc_data[municipio] = 0
-        
-        df_unificado = pd.DataFrame(index=municipios_vale)
-        df_unificado['Alertas (ha)'] = [alertas_data.get(mun, 0) for mun in municipios_vale]
-        df_unificado['SIGEF (registros)'] = [sigef_data.get(mun, 0) for mun in municipios_vale]
-        df_unificado['CNUC (ha)'] = [cnuc_data.get(mun, 0) for mun in municipios_vale]
-        
-        totais = df_unificado.sum()
-        df_unificado.loc['TOTAL'] = totais
-        
-        df_unificado['Alertas (ha)'] = df_unificado['Alertas (ha)'].round(1)
-        df_unificado['CNUC (ha)'] = df_unificado['CNUC (ha)'].round(1)
-        
-        st.dataframe(
-            df_unificado,
-            use_container_width=True,
-            column_config={
-                "Alertas (ha)": st.column_config.NumberColumn(
-                    "Alertas (ha)",
-                    format="%.1f"
-                ),
-                "SIGEF (registros)": st.column_config.NumberColumn(
-                    "SIGEF (registros)",
-                    format="%d"
-                ),
-                "CNUC (ha)": st.column_config.NumberColumn(
-                    "CNUC (ha)",
-                    format="%.1f"
-                ),
-            }
-        )
-        
-    except Exception as e:
-        st.error(f"Erro ao criar tabela unificada: {e}")
-
-def fig_desmatamento_uc_csv(df_cnuc: pd.DataFrame, df_alertas: pd.DataFrame) -> go.Figure:
-    fig = go.Figure()
-    fig.add_annotation(
-        text="Análise de sobreposição UC x Alertas requer dados geográficos.<br>Disponível apenas com shapefiles.",
-        xref="paper", yref="paper",
-        x=0.5, y=0.5, xanchor='center', yanchor='middle',
-        showarrow=False,
-        font=dict(size=14, color="gray"),
-        align="center"
-    )
-    fig.update_layout(
-        height=400,
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False)
-    )
-    return _apply_layout(fig, title="Área de Alertas por UC (Requer Dados Geográficos)", title_size=16)
-
-def fig_desmatamento_temporal_csv(df_alertas: pd.DataFrame) -> go.Figure:
-    if df_alertas.empty or 'DATADETEC' not in df_alertas.columns:
-        fig = go.Figure()
-        fig.update_layout(title="Evolução Temporal de Alertas (Desmatamento)",
-                          xaxis_title="Data", yaxis_title="Área (ha)")
-        return _apply_layout(fig, title="Evolução Temporal de Alertas (Desmatamento)", title_size=16)
-
-    df_alertas = df_alertas.copy()
-    df_alertas['DATADETEC'] = pd.to_datetime(df_alertas['DATADETEC'], errors='coerce')
-    df_alertas['AREAHA'] = pd.to_numeric(df_alertas['AREAHA'], errors='coerce')
-
-    df_valid_dates = df_alertas.dropna(subset=['DATADETEC', 'AREAHA'])
-
-    if df_valid_dates.empty:
-         fig = go.Figure()
-         fig.update_layout(title="Evolução Temporal de Alertas (Desmatamento)",
-                          xaxis_title="Data", yaxis_title="Área (ha)")
-         return _apply_layout(fig, title="Evolução Temporal de Alertas (Desmatamento)", title_size=16)
-
-    df_monthly = df_valid_dates.set_index('DATADETEC').resample('ME')['AREAHA'].sum().reset_index()
-    df_monthly['DATADETEC'] = df_monthly['DATADETEC'].dt.to_period('M').astype(str)
-
-    fig = px.line(
-        df_monthly,
-        x='DATADETEC',
-        y='AREAHA',
-        labels={"AREAHA":"Área (ha)","DATADETEC":"Mês/Ano"},
-        markers=True,
-        text='AREAHA'
-    )
-
-    fig.update_traces(
-        mode='lines+markers+text',
-        textposition='top center',
-        texttemplate='%{text:,.0f}',
-        hovertemplate=(
-            "Mês/Ano: %{x}<br>"
-            "Área de Alertas: %{y:,.0f} ha<extra></extra>"
-        )
-    )
-
-    fig.update_xaxes(title_text="Mês/Ano", tickangle=45)
-    fig.update_yaxes(title_text="Área (ha)")
-    fig.update_layout(height=400)
-
-    return _apply_layout(fig, title="Evolução Mensal de Alertas (Desmatamento)", title_size=16)
-
-def fig_desmatamento_municipal_csv(df_alertas: pd.DataFrame) -> go.Figure:
-    if df_alertas.empty or 'MUNICIPIO' not in df_alertas.columns:
-        return go.Figure()
-    
-    municipios_vale = [
-        "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
-        "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"
-    ]
-    
-    df_vale = df_alertas[df_alertas['MUNICIPIO'].isin(municipios_vale)]
-    
-    if df_vale.empty:
-        return go.Figure()
-        
-    df_mun = df_vale.groupby('MUNICIPIO').agg({
-        'AREAHA': ['count', 'sum']
-    }).round(1)
-    
-    df_mun.columns = ['Quantidade', 'Área_Total_ha']
-    df_mun = df_mun.reset_index()
-    
-    df_todos_municipios = pd.DataFrame({'MUNICIPIO': municipios_vale})
-    df_mun = df_todos_municipios.merge(df_mun, on='MUNICIPIO', how='left').fillna(0)
-    
-    df_mun = df_mun.sort_values('Área_Total_ha', ascending=False)
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        y=df_mun['MUNICIPIO'],
-        x=df_mun['Área_Total_ha'],
-        orientation='h',
-        name='Área de Alertas (ha)',
-        marker_color=CUSTOM_COLORS[0],
-        text=df_mun['Área_Total_ha'].apply(lambda x: f"{x:.0f}" if x > 0 else "0"),
-        textposition='outside',
-        texttemplate='%{text} ha',
-        hovertemplate='<b>%{y}</b><br>Área: %{x:.0f} ha<br>Quantidade: %{customdata}<extra></extra>',
-        customdata=df_mun['Quantidade']
-    ))
-    
-    fig.update_layout(
-        height=400,
-        xaxis_title="Área de Alertas (hectares)",
-        yaxis_title="",
-        showlegend=False,
-        yaxis=dict(autorange="reversed")
-    )
-    
-    return _apply_layout(fig, title="Desmatamento por Município do Vale do Ribeira", title_size=16)
-
-def fig_mapa_alertas_desmatamento(df_alertas: pd.DataFrame) -> go.Figure:
-    municipios_vale = [
-        "Adrianópolis", "Bocaiúva do Sul", "Cerro Azul", 
-        "Doutor Ulysses", "Itaperuçu", "Rio Branco do Sul", "Tunas do Paraná"
-    ]
-    coordenadas_municipios = {
-        "Adrianópolis": {"lat": -24.6577, "lon": -48.9933},
-        "Bocaiúva do Sul": {"lat": -25.2069, "lon": -49.1172},
-        "Cerro Azul": {"lat": -24.8267, "lon": -49.2597},
-        "Doutor Ulysses": {"lat": -25.4406, "lon": -49.2775},
-        "Itaperuçu": {"lat": -25.2397, "lon": -49.3442},
-        "Rio Branco do Sul": {"lat": -25.1858, "lon": -49.3106},
-        "Tunas do Paraná": {"lat": -24.9639, "lon": -49.1053}
-    }
-    
-    if df_alertas.empty or 'MUNICIPIO' not in df_alertas.columns or 'AREAHA' not in df_alertas.columns:
-        return go.Figure()
-    
-    df_vale = df_alertas[df_alertas['MUNICIPIO'].isin(municipios_vale)].copy()
-    if df_vale.empty:
-        return go.Figure()
-    
-    df_vale['AREAHA'] = pd.to_numeric(df_vale['AREAHA'], errors='coerce')
-    df_mun = df_vale.groupby('MUNICIPIO').agg({'AREAHA': 'sum', 'MUNICIPIO': 'count'}).rename(columns={'MUNICIPIO': 'QTD_ALERTAS', 'AREAHA': 'AREA_TOTAL'}).reset_index()
-    df_mun['lat'] = df_mun['MUNICIPIO'].map(lambda x: coordenadas_municipios[x]['lat'])
-    df_mun['lon'] = df_mun['MUNICIPIO'].map(lambda x: coordenadas_municipios[x]['lon'])
-    df_mun['hover'] = df_mun.apply(lambda row: f"<b>{row['MUNICIPIO']}</b><br>Área: {row['AREA_TOTAL']:.1f} ha<br>Alertas: {row['QTD_ALERTAS']}", axis=1)
-    
-    fig = go.Figure(go.Scattermapbox(
-        lat=df_mun['lat'],
-        lon=df_mun['lon'],
-        mode='markers',
-        marker=dict(
-            size=12 + (df_mun['AREA_TOTAL'] / max(df_mun['AREA_TOTAL'].max(), 1)) * 30,
-            color=df_mun['AREA_TOTAL'],
-            colorscale='Viridis',
-            showscale=True,
-            colorbar=dict(title="Área de Alertas (ha)"),
-            opacity=0.8
-        ),
-        text=df_mun['MUNICIPIO'],
-        hovertemplate=df_mun['hover'] + "<extra></extra>",
-        name="Alertas",
-        showlegend=False
-    ))
-    
-    fig.update_layout(
-        mapbox=dict(
-            style="open-street-map",
-            zoom=8,
-            center=dict(lat=df_mun['lat'].mean(), lon=df_mun['lon'].mean())
-        ),
-        margin=dict(l=0, r=0, t=30, b=0),
-        height=500,
-        title="Mapa de Alertas de Desmatamento por Município",
-        showlegend=False,
-        dragmode='pan'
-    )
-    
-    # Configurar interatividade com mouse
-    fig.update_layout(
-        mapbox=dict(
-            style="open-street-map",
-            zoom=8,
-            center=dict(lat=df_mun['lat'].mean(), lon=df_mun['lon'].mean()),
-            bearing=0,
-            pitch=0
-        )
-    )
-    
-    return fig
-
-@st.cache_data
-def verificar_e_carregar_dados():
-    arquivos_necessarios = [
-        "Alertas_Vale_Ribeira.csv",
-        "cnuc.csv", 
-        "SIGEF_Vale_Ribeira.csv",
-        "Risco_Fogo.csv"
-    ]
-    
-    dados = {}
-    arquivos_encontrados = []
-    arquivos_faltando = []
-    
-    for arquivo in arquivos_necessarios:
-        if os.path.exists(arquivo):
-            dados[arquivo] = carregar_csv(arquivo)
-            arquivos_encontrados.append(arquivo)
-        else:
-            dados[arquivo] = pd.DataFrame()
-            arquivos_faltando.append(arquivo)
-    
-    return dados, arquivos_encontrados, arquivos_faltando
-
-dados, arquivos_ok, arquivos_faltando = verificar_e_carregar_dados()
-
-df_alertas_raw = dados["Alertas_Vale_Ribeira.csv"]
-df_cnuc_raw = dados["cnuc.csv"]
-df_sigef_raw = dados["SIGEF_Vale_Ribeira.csv"]
-df_queimadas_raw = dados["Risco_Fogo.csv"]
-
-st.title("Dashboard Vale do Ribeira - Paraná")
-
-if arquivos_faltando:
-    st.warning(f"⚠️ Arquivos não encontrados: {', '.join(arquivos_faltando)}")
-    st.info("📋 Para uso completo do dashboard, certifique-se de que todos os arquivos CSV estão na pasta raiz.")
-
-if not all(df.empty for df in [df_alertas_raw, df_cnuc_raw, df_sigef_raw, df_queimadas_raw]):
-    with st.expander("📊 Informações sobre os dados carregados"):
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Alertas", len(df_alertas_raw) if not df_alertas_raw.empty else 0)
-        with col2:
-            st.metric("UCs (CNUC)", len(df_cnuc_raw) if not df_cnuc_raw.empty else 0)
-        with col3:
-            st.metric("SIGEF", len(df_sigef_raw) if not df_sigef_raw.empty else 0)
-        with col4:
-            st.metric("Queimadas", len(df_queimadas_raw) if not df_queimadas_raw.empty else 0)
-
-@st.cache_data
-def load_data(filepath):
-    """Carrega e pré-processa os dados dos processos judiciais."""
-    try:
-        df = pd.read_csv(filepath, delimiter=';')
-        df['data_ajuizamento'] = pd.to_datetime(df['data_ajuizamento'], format='%d/%m/%Y', errors='coerce')
-        df.dropna(subset=['data_ajuizamento'], inplace=True)
-        return df
-    except FileNotFoundError:
-        st.error(f"Arquivo não encontrado: {filepath}. Certifique-se de que o arquivo está na mesma pasta que o script.")
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Erro ao carregar o arquivo: {e}")
-        return pd.DataFrame()
-
-def fig_distribuicao_processos_municipio(df):
-    """Cria um gráfico de barras da distribuição de processos por município."""
-    if df.empty or 'municipio' not in df.columns:
-        return go.Figure()
-
-    dist_municipio = df['municipio'].value_counts().reset_index()
-    dist_municipio.columns = ['municipio', 'quantidade']
-    
-    fig = px.bar(
-        dist_municipio,
-        x='quantidade',
-        y='municipio',
-        orientation='h',
-        labels={'quantidade': 'Nº de Processos', 'municipio': 'Município'},
-        text='quantidade',
-        color='quantidade',
-        color_continuous_scale=px.colors.sequential.Viridis
-    )
-    fig.update_layout(
-        yaxis={'categoryorder':'total ascending'},
-        showlegend=False,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    fig.update_traces(textposition='outside')
-    return _apply_layout(fig, title="Distribuição de Processos por Município", title_size=14)
-
 def fig_ranking_assuntos(df):
     if df.empty or 'assuntos' not in df.columns:
         return go.Figure()
@@ -882,31 +956,6 @@ def fig_ranking_assuntos(df):
     fig.update_traces(textposition='outside')
     
     return _apply_layout(fig, title="Top 10 Assuntos mais Frequentes", title_size=14)
-
-def fig_evolucao_temporal_processos(df):
-    if df.empty or 'data_ajuizamento' not in df.columns:
-        return go.Figure()
-
-    df_temporal = df.set_index('data_ajuizamento').resample('Y').size().reset_index(name='quantidade')
-    df_temporal['ano'] = df_temporal['data_ajuizamento'].dt.year
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df_temporal['ano'], 
-        y=df_temporal['quantidade'],
-        mode='lines+markers+text',
-        text=df_temporal['quantidade'],
-        textposition="top center",
-        line=dict(color='#2ca02c', width=2)
-    ))
-    fig.update_layout(
-        xaxis_title='Ano de Ajuizamento',
-        yaxis_title='Nº de Processos',
-        showlegend=False,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)'
-    )
-    return _apply_layout(fig, title="Evolução Anual de Novos Processos", title_size=14)
 
 def criar_graficos_processos(df_processos):
     if df_processos.empty:
@@ -942,302 +991,214 @@ def criar_graficos_processos(df_processos):
 
     return graficos
 
+def fig_evolucao_temporal_processos(df):
+    if df.empty or 'data_ajuizamento' not in df.columns:
+        return go.Figure()
 
+    df_temporal = df.set_index('data_ajuizamento').resample('Y').size().reset_index(name='quantidade')
+    df_temporal['ano'] = df_temporal['data_ajuizamento'].dt.year
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df_temporal['ano'], 
+        y=df_temporal['quantidade'],
+        mode='lines+markers+text',
+        text=df_temporal['quantidade'],
+        textposition="top center",
+        line=dict(color='#2ca02c', width=2)
+    ))
+    fig.update_layout(
+        xaxis_title='Ano de Ajuizamento',
+        yaxis_title='Nº de Processos',
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return _apply_layout(fig, title="Evolução Anual de Novos Processos", title_size=14)
+
+def fig_distribuicao_processos_municipio(df):
+    if df.empty or 'municipio' not in df.columns:
+        return go.Figure()
+
+    dist_municipio = df['municipio'].value_counts().reset_index()
+    dist_municipio.columns = ['municipio', 'quantidade']
+    
+    fig = px.bar(
+        dist_municipio,
+        x='quantidade',
+        y='municipio',
+        orientation='h',
+        labels={'quantidade': 'Nº de Processos', 'municipio': 'Município'},
+        text='quantidade',
+        color='quantidade',
+        color_continuous_scale=px.colors.sequential.Viridis
+    )
+    fig.update_layout(
+        yaxis={'categoryorder':'total ascending'},
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    fig.update_traces(textposition='outside')
+    return _apply_layout(fig, title="Distribuição de Processos por Município", title_size=14)
+
+# ======================= CARREGAMENTO DOS DADOS =======================
+gdf_cnuc_raw = carregar_shapefile("cnuc.shp")
+gdf_sigef_raw = carregar_shapefile("SIGEF.shp")
+gdf_alertas_raw = carregar_shapefile("Alertas.shp")
+gdf_cnuc_ha_raw = preparar_hectares(gdf_cnuc_raw)
+df_queimadas_raw = pd.read_csv("Risco_Fogo.csv")
 df_processos = load_data("processos_ambientais_vale_do_ribeira_pr.csv")
 
+if not gdf_cnuc_raw.empty:
+    limites = gdf_cnuc_raw.total_bounds
+    centro = {"lat": (limites[1] + limites[3]) / 2, "lon": (limites[0] + limites[2]) / 2}
+else:
+    centro = {"lat": -24.85, "lon": -49.15}
 
-tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas", 'Justiça'])
+
+st.title("Dashboard Vale do Ribeira - Paraná")
+
+tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas", "Justiça"])
 
 with tabs[0]:
     st.header("Sobreposições")
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
-        st.write("""
-        Esta análise apresenta dados sobreposições territoriais no Vale do Ribeira (PR):
-        - Percentuais de alertas e registros SIGEF em relação às Unidades de Conservação
-        - Distribuição por municípios
-        - Áreas e contagens por Unidade de Conservação
-        
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
-        
-        **Dados utilizados:**
-        - Alertas: Alertas_Vale_Ribeira.csv
-        - SIGEF: SIGEF_Vale_Ribeira.csv  
-        - UCs: cnuc.csv
-        """)
+        st.write("Análise de sobreposições de Cadastros Ambientais Rurais (CAR) e alertas de desmatamento em Unidades de Conservação (UCs).")
 
-    area_alertas, contagem_sigef, total_unidades, contagem_alerta, area_cnuc = criar_cards_csv(df_cnuc_raw, df_sigef_raw, df_alertas_raw)
+    total_ucs = len(gdf_cnuc_raw) if not gdf_cnuc_raw.empty else 0
+    area_total_ucs = gdf_cnuc_raw['area_km2'].sum() if not gdf_cnuc_raw.empty and 'area_km2' in gdf_cnuc_raw.columns else 0
+    total_alertas = len(gdf_alertas_raw) if not gdf_alertas_raw.empty else 0
+    area_alertas = pd.to_numeric(gdf_alertas_raw['areaha'], errors='coerce').fillna(0).sum() if not gdf_alertas_raw.empty and 'areaha' in gdf_alertas_raw.columns else 0
+    total_sigef = len(gdf_sigef_raw) if not gdf_sigef_raw.empty else 0
     
-    cols = st.columns(5, gap="small")
-    titulos = [
-        ("Área Alertas", f"{area_alertas:.1f} ha", "Área total de alertas"),
-        ("Registros SIGEF", f"{contagem_sigef}", "Total de registros SIGEF"),
-        ("Municípios", f"{total_unidades}", "Total de municípios na análise"),
-        ("Qtd Alertas", f"{contagem_alerta}", "Quantidade de alertas"),
-        ("Área UCs", f"{area_cnuc:.1f} ha", "Área total das UCs")
-    ]
-    
-    card_template = """
-    <div style="
-        background-color:#F9F9FF;
-        border:1px solid #E0E0E0;
-        padding:1rem;
-        border-radius:8px;
-        box-shadow:0 2px 4px rgba(0,0,0,0.1);
-        text-align:center;
-        height:100px;
-        display:flex;
-        flex-direction:column;
-        justify-content:center;">
-        <h5 style="margin:0; font-size:0.9rem;">{0}</h5>
-        <p style="margin:0; font-size:1.2rem; font-weight:bold; color:#2F5496;">{1}</p>
-        <small style="color:#666;">{2}</small>
-    </div>
-    """
-    
-    for col, (t, v, d) in zip(cols, titulos):
-        col.markdown(card_template.format(t, v, d), unsafe_allow_html=True)
 
+    
+    cols = st.columns(5)
+    cols[0].metric("Total de UCs", f"{total_ucs}")
+    cols[1].metric("Área Total UCs", f"{area_total_ucs:,.0f} km²")
+    cols[2].metric("Total de Alertas", f"{total_alertas:,}")
+    cols[3].metric("Área Alertas", f"{area_alertas:,.0f} ha")
+    cols[4].metric("Total SIGEF", f"{total_sigef:,}")
     st.divider()
 
-    row1_charts = st.columns([1], gap="large")[0]
-    with row1_charts:
-        if not df_sigef_raw.empty:
-            st.subheader("Distribuição de SIGEF")
-            st.plotly_chart(fig_distribuicao_sigef(df_sigef_raw), use_container_width=True, height=350)
-            st.caption("Figura 1.2: Distribuição de registros SIGEF por município do Vale do Ribeira.")
-            
-            with st.expander("Detalhes e Fonte da Figura 1.2"):
-                st.write("""
-                **Interpretação:**
-                O gráfico apresenta a quantidade de registros no Sistema de Gestão Fundiária (SIGEF) por município.
+    row1_map, row1_chart1 = st.columns([3, 2], gap="large")
+    with row1_map:
+        st.subheader("Mapa de Sobreposições")
+        uc_names_mapa = ["Todas"] + sorted(gdf_cnuc_raw["nome_uc"].unique()) if not gdf_cnuc_raw.empty else ["Todas"]
+        uc_selecionada_mapa = st.selectbox("Selecione a UC para focar:", uc_names_mapa, key="uc_mapa_filtro")
+        
+        fig_mapa = fig_mapa_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw, centro, uc_selecionada_mapa)
+        
+        st.plotly_chart(fig_mapa, use_container_width=True, config={"scrollZoom": True})
+        
+        st.subheader("Proporção da Área do CAR sobre a UC")
+        uc_names = ["Todas"] + sorted(gdf_cnuc_ha_raw["nome_uc"].unique()) if not gdf_cnuc_ha_raw.empty else ["Todas"]
+        nome_uc_donut = st.selectbox("Selecione a UC:", uc_names, key="donut_uc")
+        modo_donut = st.radio("Mostrar valores como:", ["Hectares (ha)", "% da UC"], horizontal=True, key="donut_mode")
+        fig_donut = fig_car_por_uc_donut(gdf_cnuc_raw, gdf_sigef_raw, nome_uc_donut, "absoluto" if modo_donut == "Hectares (ha)" else "percent")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
-                **Observações:**
-                - Barras horizontais mostram quantidade de registros
-                - Inclui apenas os 7 municípios do Vale do Ribeira
-                - Ordenado por quantidade de registros
-
-                **Fonte:** INCRA - Sistema de Gestão Fundiária (SIGEF).
-                """)
+    with row1_chart1:
+        st.subheader("Áreas de Sobreposição por UC")
+        fig_sobreposicoes = fig_grafico_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw)
+        if not fig_sobreposicoes.data:
+            st.info("Nenhuma sobreposição encontrada entre UCs e alertas/SIGEF.")
         else:
-            st.warning("Dados de SIGEF não disponíveis")
-
-        if not df_cnuc_raw.empty:
-            st.subheader("Áreas por UC")
-            st.plotly_chart(fig_sobreposicoes_csv(df_cnuc_raw), use_container_width=True, height=350)
-            st.caption("Figura 1.3: Distribuição de áreas por unidade de conservação.")
-            
-            with st.expander("Detalhes e Fonte da Figura 1.3"):
-                st.write("""
-                **Interpretação:**
-                O gráfico mostra as áreas das unidades de conservação em hectares.
-
-                **Observações:**
-                - Área total da UC em hectares
-                - Ordenado por área total
-                - Dados reais do cadastro de UCs
-
-                **Fonte:** MMA - Ministério do Meio Ambiente. *Cadastro Nacional de Unidades de Conservação*.
-                """)
+            st.plotly_chart(fig_sobreposicoes, use_container_width=True)
+        
+        st.subheader("Distribuição de UCs por Município")
+        fig_municipios = fig_ucs_por_municipio(gdf_cnuc_raw)
+        if not fig_municipios.data:
+            st.info("Não há dados de municípios para exibir.")
         else:
-            st.warning("Dados de UCs não disponíveis para gráficos")
-
-    st.markdown("""<div style="background-color: #fff; border-radius: 6px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 0.5rem;">
-        <h3 style="color: #1E1E1E; margin-top: 0; margin-bottom: 0.5rem;">Tabela Unificada</h3>
-        <p style="color: #666; font-size: 0.95em; margin-bottom:0;">Visualização unificada dos dados de alertas, SIGEF e CNUC por município.</p>
-    </div>""", unsafe_allow_html=True)
+            st.plotly_chart(fig_municipios, use_container_width=True)
     
-    mostrar_tabela_unificada_csv(df_alertas_raw, df_sigef_raw, df_cnuc_raw)
+    st.subheader("Áreas das Unidades de Conservação")
+    if not gdf_cnuc_raw.empty:
+        df_ucs = gdf_cnuc_raw[['nome_uc', 'area_km2']].copy()
+        df_ucs['area_ha'] = pd.to_numeric(df_ucs['area_km2'], errors='coerce').fillna(0) * 100
+        df_ucs = df_ucs.sort_values('area_km2', ascending=False)
+        df_ucs.columns = ['Nome da UC', 'Área (km²)', 'Área (ha)']
+        st.dataframe(df_ucs, use_container_width=True, hide_index=True)
+    else:
+        st.info("Não há dados de UCs disponíveis.")
     
-    st.caption("Tabela 1.1: Dados consolidados por município do Vale do Ribeira (PR) - Versão CSV.")
-    with st.expander("Detalhes e Fonte da Tabela 1.1"):
-        st.write("""
-        **Interpretação:**
-        A tabela apresenta os dados consolidados por município, incluindo:
-        - Área de alertas em hectares
-        - Quantidade de registros SIGEF
-        - Área do CNUC em hectares
-
-        **Observações:**
-        - Alertas em hectares
-        - SIGEF em quantidade de registros
-        - CNUC em hectares
-        - Totais na última linha
-
-        **Fonte:** 
-        - Alertas: Alertas_Vale_Ribeira.csv
-        - SIGEF: SIGEF_Vale_Ribeira.csv
-        - CNUC: cnuc.csv
-        """)
-    
+    st.subheader("Tabela Unificada por Município")
+    mostrar_tabela_unificada(gdf_alertas_raw, gdf_cnuc_raw, gdf_sigef_raw)
     st.divider()
 
-# --- ABA DESMATAMENTO ---
 with tabs[1]:
     st.header("Desmatamento")
-
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
-        st.write("""
-        Esta análise apresenta dados sobre áreas de alerta de desmatamento no Vale do Ribeira (PR):
-        - Distribuição por Unidade de Conservação (estimada)
-        - Evolução temporal
-        - Distribuição por município
+        st.write("Análise de alertas de desmatamento, com dados do MapBiomas Alerta.")
 
-        **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
-
-        Os dados são provenientes do arquivo Alertas_Vale_Ribeira.csv.
-        """)
-        st.markdown(
-            "**Fonte Geral da Seção:** MapBiomas Alerta. Dados extraídos e compilados.",
-            unsafe_allow_html=True
-        )
-
-    st.write("**Filtro Global:**")
-    df_alertas_vale = filtrar_alertas_vale_ribeira(df_alertas_raw)
+    anos_disponiveis = ['Todos'] + sorted(gdf_alertas_raw['anodetec'].dropna().unique().astype(int).tolist()) if 'anodetec' in gdf_alertas_raw.columns and not gdf_alertas_raw.empty else ['Todos']
+    ano_selecionado = st.selectbox('Filtrar por Ano de Detecção:', anos_disponiveis, key="filtro_ano_desmat")
     
-    if not df_alertas_vale.empty and 'ANODETEC' in df_alertas_vale.columns:
-        anos_disponiveis = ['Todos'] + sorted(df_alertas_vale['ANODETEC'].dropna().unique().tolist())
-        ano_global_selecionado = st.selectbox('Ano de Detecção:', anos_disponiveis, key="filtro_ano_global")
-
-        if ano_global_selecionado != 'Todos':
-            df_alertas_filtrado = df_alertas_vale[df_alertas_vale['ANODETEC'] == ano_global_selecionado].copy()
-        else:
-            df_alertas_filtrado = df_alertas_vale.copy()
-    else:
-        df_alertas_filtrado = df_alertas_vale.copy()
-        if df_alertas_vale.empty:
-            st.info("Nenhum alerta encontrado nos municípios do Vale do Ribeira.")
-        else:
-            st.info("Coluna de ano não disponível. Exibindo todos os dados dos municípios do Vale do Ribeira.")
-
+    gdf_alertas_filtrado = gdf_alertas_raw[gdf_alertas_raw['anodetec'] == ano_selecionado] if ano_selecionado != 'Todos' else gdf_alertas_raw
     st.divider()
 
-    col_charts1, col_charts2 = st.columns([1, 1], gap="large")
-
-    with col_charts1:
-        if not df_cnuc_raw.empty and not df_alertas_filtrado.empty:
-            fig_desmat_uc = fig_desmatamento_uc_csv(df_cnuc_raw, df_alertas_filtrado)
-            if fig_desmat_uc and fig_desmat_uc.data:
-                st.subheader("Área de Alertas por UC")
-                st.plotly_chart(fig_desmat_uc, use_container_width=True, height=400, key="desmat_uc_chart")
-                st.caption("Figura 2.1: Área estimada de alertas de desmatamento por unidade de conservação.")
-                with st.expander("Detalhes e Fonte da Figura 2.1"):
-                    st.write("""
-                    **Limitação Importante:**
-                    Este gráfico requer dados geográficos para análise precisa de sobreposições.
-
-                    **Motivo:**
-                    - Calcular sobreposições entre alertas e UCs requer coordenadas geográficas precisas
-                    - Dados tabulares não contêm informações espaciais suficientes
-                    - Análise apresentada é uma estimativa
-
-                    **Recomendação:**
-                    Para análise espacial completa, utilize dados geográficos detalhados.
-
-                    **Fonte:** Limitação técnica - dados geográficos necessários.
-                    """)
+    col_charts, col_map = st.columns([2, 3], gap="large")
+    with col_charts:
+        st.subheader("Desmatamento por Localização")
+        fig_desmat_uc = fig_desmatamento_uc(gdf_cnuc_raw, gdf_alertas_filtrado)
+        if not fig_desmat_uc.data:
+            st.info("Nenhum alerta de desmatamento sobre UCs para o período selecionado.")
         else:
-            st.warning("Dados de UCs ou Alertas não disponíveis para esta análise.")
+            st.plotly_chart(fig_desmat_uc, use_container_width=True)
 
-        if not df_alertas_filtrado.empty:
-            st.subheader("Desmatamento por Município")
-            fig_mun = fig_desmatamento_municipal_csv(df_alertas_filtrado)
-            if fig_mun and fig_mun.data:
-                st.plotly_chart(fig_mun, use_container_width=True, height=400, key="desmat_municipal_chart")
-                st.caption("Figura 2.2: Área de alertas por município do Vale do Ribeira.")
-                with st.expander("Detalhes e Fonte da Figura 2.2"):
-                    st.write("""
-                    **Interpretação:**
-                    O gráfico mostra a distribuição de alertas de desmatamento por município do Vale do Ribeira.
+    with col_map:
+        st.subheader("Geometrias dos Alertas Filtrados")
 
-                    **Observações:**
-                    - Barras horizontais representam área total em hectares
-                    - Hover mostra quantidade de alertas e área total
-                    - Inclui todos os 7 municípios da região
-                    - Ordenado do maior para o menor
-
-                    **Fonte:** Alertas_Vale_Ribeira.csv.
-                    """)
-            else:
-                st.info("Nenhum alerta encontrado nos municípios do Vale do Ribeira para o período selecionado.")
+        if not gdf_alertas_filtrado.empty:
+            try:
+                fig_alertas_geom = go.Figure(go.Choroplethmapbox(
+                    geojson=gdf_alertas_filtrado.__geo_interface__, locations=gdf_alertas_filtrado.index,
+                    z=pd.to_numeric(gdf_alertas_filtrado['areaha'], errors='coerce').fillna(0),
+                    colorscale="Reds", showscale=True, marker_opacity=0.7, marker_line_width=1,
+                    hovertemplate="<b>Área:</b> %{z:.2f} ha<extra></extra>"
+                ))
+                fig_alertas_geom.update_layout(
+                    mapbox=dict(style="open-street-map", zoom=8, center=centro),
+                    margin=dict(l=0, r=0, t=0, b=0), height=500
+                )
+                st.plotly_chart(fig_alertas_geom, use_container_width=True)
+            except Exception as e:
+                st.error(f"Erro ao criar mapa de alertas: {e}")
+        else:
+            st.info("Não há alertas para o período selecionado.")
 
     st.divider()
-
-    st.subheader("Evolução Temporal de Alertas")
-    if not df_alertas_vale.empty:
-        fig_desmat_temp = fig_desmatamento_temporal_csv(df_alertas_vale)
-        if fig_desmat_temp and fig_desmat_temp.data:
-            st.plotly_chart(fig_desmat_temp, use_container_width=True, height=400, key="desmat_temporal_chart")
-            st.caption("Figura 2.4: Evolução mensal dos alertas de desmatamento.")
-            with st.expander("Detalhes e Fonte da Figura 2.4"):
-                st.write("""
-                **Interpretação:**
-                O gráfico mostra a evolução temporal dos alertas de desmatamento no Vale do Ribeira.
-
-                **Observações:**
-                - Linha conecta os valores mensais
-                - Pontos marcam cada mês com dados
-                - Valores exibidos sobre os pontos
-                - Agregação mensal da área de alertas
-
-                **Fonte:** Alertas_Vale_Ribeira.csv.
-                """)
-        else:
-            st.info("Dados temporais não disponíveis para este gráfico.")
+    st.subheader("Evolução Temporal do Desmatamento (Geral)")
+    
+    fig_temporal = fig_desmatamento_temporal(gdf_alertas_raw)
+    if not fig_temporal.data:
+        st.info("Não há dados temporais para exibir.")
     else:
-        st.warning("Dados de Alertas não disponíveis para análise temporal.")
+        st.plotly_chart(fig_temporal, use_container_width=True)
 
-    st.divider()
-
-    st.subheader("Ranking de Municípios por Desmatamento")
-    if not df_alertas_filtrado.empty:
-        required_ranking_cols = ['MUNICIPIO', 'AREAHA', 'ANODETEC']
-        if all(col in df_alertas_filtrado.columns for col in required_ranking_cols):
-            df_alertas_filtrado['AREAHA'] = pd.to_numeric(df_alertas_filtrado['AREAHA'], errors='coerce')
-
-            ranking_municipios = df_alertas_filtrado.groupby('MUNICIPIO', observed=False).agg({
-                'AREAHA': ['sum', 'count', 'mean'],
-                'ANODETEC': ['min', 'max']
-            }).round(2)
-            
-            ranking_municipios.columns = ['Área Total (ha)', 'Qtd Alertas', 'Área Média (ha)', 'Ano Min', 'Ano Max']
-            ranking_municipios = ranking_municipios.reset_index()
-            ranking_municipios = ranking_municipios.sort_values('Área Total (ha)', ascending=False)
-            ranking_municipios.insert(0, 'Posição', range(1, len(ranking_municipios) + 1))
-
-            ranking_municipios['Área Total (ha)'] = ranking_municipios['Área Total (ha)'].apply(lambda x: f"{x:,.2f}")
-            ranking_municipios['Área Média (ha)'] = ranking_municipios['Área Média (ha)'].apply(lambda x: f"{x:.2f}")
-
-            st.dataframe(
-                ranking_municipios.head(10),
-                use_container_width=True,
-                hide_index=True,
-                height=400
-            )
-            
-            st.caption("Tabela 2.1: Ranking de municípios por área de desmatamento.")
-            with st.expander("Detalhes e Fonte da Tabela 2.1"):
-                st.write("""
-                **Interpretação:**
-                A tabela apresenta o ranking dos municípios por área total de desmatamento.
-
-                **Colunas:**
-                - Posição: Ranking por área total
-                - Município: Nome do município
-                - Área Total: Soma de todas as áreas de alertas (ha)
-                - Qtd Alertas: Número total de alertas
-                - Área Média: Área média por alerta (ha)
-                - Ano Min/Max: Período de abrangência dos dados
-
-                **Fonte:** Alertas_Vale_Ribeira.csv.
-                """)
-
+    st.subheader("Resumo dos Alertas")
+    if not gdf_alertas_filtrado.empty and 'areaha' in gdf_alertas_filtrado.columns:
+        gdf_temp = gdf_alertas_filtrado.copy()
+        gdf_temp['areaha'] = pd.to_numeric(gdf_temp['areaha'], errors='coerce').fillna(0)
+        
+        total_area = gdf_temp['areaha'].sum()
+        total_registros = len(gdf_temp[gdf_temp['areaha'] > 0])
+        
+        if total_area > 0:
+            resumo = pd.DataFrame({
+                'Métrica': ['Total de Registros', 'Área Total (ha)', 'Área Média por Alerta (ha)'],
+                'Valor': [total_registros, f"{total_area:,.2f}", f"{total_area/total_registros:,.2f}" if total_registros > 0 else "0"]
+            })
+            st.dataframe(resumo, use_container_width=True, hide_index=True)
         else:
-            st.info("Colunas necessárias não disponíveis para o ranking.")
+            st.info("Nenhum alerta com área válida encontrado.")
     else:
-        st.info("Dados não disponíveis para o ranking no período selecionado.")
+        st.info("Não há dados de alertas disponíveis.")
 
-# --- ABA QUEIMADAS ---
 with tabs[2]:
+
     st.header("Focos de Calor")
 
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
@@ -1282,7 +1243,6 @@ with tabs[2]:
 
     st.divider()
 
-    # Gráficos de Queimadas
     if not df_queimadas_filtrado.empty:
         graficos_queimadas = criar_graficos_queimadas(df_queimadas_filtrado)
 
@@ -1317,13 +1277,12 @@ with tabs[2]:
 
         st.divider()
 
-        # Ranking de Municípios por Queimadas
         st.header("Ranking de Municípios por Indicadores de Queimadas")
         st.caption("Classifica municípios pelo maior registro de cada indicador.")
         
         col_rank1, col_rank2 = st.columns(2)
         with col_rank1:
-            pass  # Ano já selecionado acima
+            pass  
         with col_rank2:
             indicador_selecionado = st.selectbox(
                 "Indicador para ranking:",
@@ -1346,8 +1305,6 @@ with tabs[2]:
             st.info("Sem dados válidos para este ranking.")
     else:
         st.error("Não foi possível carregar os dados de queimadas. Verifique se o arquivo Risco_Fogo.csv está disponível.")
-
-# -- ABA Processos ---
 
 with tabs[3]:
     st.header("Processos Judiciais")
