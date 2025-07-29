@@ -10,3 +10,4 @@ fiona>=1.9.0
 pyproj>=3.6.0
 psutil>=5.9.0
 unicodedata2>=15.0.0
+geopandas
