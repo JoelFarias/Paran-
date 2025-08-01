@@ -1293,6 +1293,14 @@ with tabs[0]:
         st.plotly_chart(fig_mapa, use_container_width=True, config={"scrollZoom": True})
         
         st.subheader("Proporção da Área do CAR sobre a UC")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico de rosca mostra a proporção de área ocupada por cadastros rurais (CAR/SIGEF) dentro de uma UC específica. 
+            Permite analisar:
+            - **Ocupação**: Percentual da UC sobreposta por propriedades rurais
+            - **Pressão**: Intensidade da pressão antrópica sobre a área protegida
+            - **Conflito**: Identificação de possíveis conflitos fundiários
+            """)
         uc_names = ["Todas"] + sorted(gdf_cnuc_raw["nome_uc"].unique()) if not gdf_cnuc_raw.empty and len(gdf_cnuc_raw) > 0 else ["Todas"]
         nome_uc_donut = st.selectbox("Selecione a UC:", uc_names, key="donut_uc")
         modo_donut = st.radio("Mostrar valores como:", ["Hectares (ha)", "% da UC"], horizontal=True, key="donut_mode")
@@ -1301,6 +1309,14 @@ with tabs[0]:
 
     with row1_chart1:
         st.subheader("Sobreposições de Alertas e CAR/SIGEF por UC")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico mostra as áreas de sobreposição entre alertas de desmatamento e cadastros ambientais rurais (CAR/SIGEF) 
+            dentro das Unidades de Conservação. As barras empilhadas permitem visualizar:
+            - **Alertas**: Área total de alertas de desmatamento detectados dentro de cada UC
+            - **SIGEF**: Área total de cadastros rurais sobrepostos à UC
+            - **Comparação**: Identificação das UCs com maiores pressões ambientais
+            """)
         fig_sobreposicoes = fig_grafico_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw)
         if not fig_sobreposicoes.data:
             st.info("Nenhuma sobreposição encontrada entre UCs e alertas/SIGEF.")
@@ -1308,6 +1324,14 @@ with tabs[0]:
             st.plotly_chart(fig_sobreposicoes, use_container_width=True)
         
         st.subheader("Quantidade de UCs por Município")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico apresenta a distribuição das Unidades de Conservação pelos municípios do Vale do Ribeira. 
+            Permite identificar:
+            - **Concentração**: Municípios com maior número de UCs
+            - **Cobertura**: Distribuição espacial das áreas protegidas na região
+            - **Gestão**: Complexidade administrativa por município
+            """)
         fig_municipios = fig_ucs_por_municipio(gdf_cnuc_raw)
         if not fig_municipios.data:
             st.info("Não há dados de municípios para exibir.")
@@ -1336,6 +1360,14 @@ with tabs[1]:
     col_charts, col_map = st.columns([2, 3], gap="large")
     with col_charts:
         st.subheader("Área Total de Alertas por Localização")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico apresenta a distribuição dos alertas de desmatamento por localização (município ou ano). 
+            Permite identificar:
+            - **Hotspots**: Localizações com maior concentração de desmatamento
+            - **Magnitude**: Área total desmatada em cada localização
+            - **Priorização**: Áreas que necessitam de maior atenção para fiscalização
+            """)
         fig_desmat_uc = fig_desmatamento_uc(gdf_cnuc_raw, gdf_alertas_filtrado)
         if not fig_desmat_uc.data:
             st.info("Nenhum alerta de desmatamento sobre UCs para o período selecionado.")
@@ -1343,6 +1375,14 @@ with tabs[1]:
             st.plotly_chart(fig_desmat_uc, use_container_width=True)
         
         st.subheader("Desmatamento por Tipo de Pressão")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico mostra a distribuição dos alertas de desmatamento por tipo de pressão antrópica. 
+            Permite analisar:
+            - **Causas**: Principais atividades responsáveis pelo desmatamento
+            - **Impacto**: Área desmatada por cada tipo de atividade
+            - **Estratégias**: Orientação para políticas de prevenção específicas
+            """)
         fig_pressoes = fig_pressoes_desmatamento(gdf_alertas_filtrado)
         if not fig_pressoes.data:
             st.info("Dados de pressão não disponíveis para o período selecionado.")
@@ -1372,6 +1412,14 @@ with tabs[1]:
 
     st.divider()
     st.subheader("Histórico Anual dos Alertas de Desmatamento")
+    with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+        st.write("""
+        Este gráfico de linha mostra a evolução temporal dos alertas de desmatamento ao longo dos anos. 
+        Permite identificar:
+        - **Tendências**: Padrões de aumento ou diminuição do desmatamento
+        - **Sazonalidade**: Variações anuais na detecção de alertas
+        - **Eficácia**: Impacto de políticas de conservação ao longo do tempo
+        """)
     
     fig_temporal = fig_desmatamento_temporal(gdf_alertas_raw)
     if not fig_temporal.data:
@@ -1462,32 +1510,62 @@ with tabs[2]:
             else:
                 st.info(mensagem_erro)
         
-        renderizar_grafico_com_validacao(
-            "Variação Mensal do Risco de Fogo",
-            'temporal',
-            f"Figura 3.1: Evolução mensal do risco médio de fogo para {display_periodo}.",
-            "Dados insuficientes para gerar o gráfico temporal."
-        )
+        st.subheader("Variação Mensal do Risco de Fogo")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico de linha mostra a variação mensal do risco médio de fogo na região. 
+            Permite identificar:
+            - **Sazonalidade**: Períodos do ano com maior risco de incêndios
+            - **Tendências**: Padrões de variação ao longo dos meses
+            - **Prevenção**: Orientação para planejamento de ações preventivas
+            """)
+        if 'temporal' in graficos_queimadas:
+            st.plotly_chart(graficos_queimadas['temporal'], use_container_width=True)
+            st.caption(f"Figura 3.1: Evolução mensal do risco médio de fogo para {display_periodo}.")
+        else:
+            st.info("Dados insuficientes para gerar o gráfico temporal.")
 
         col_graficos1, col_graficos2 = st.columns(2, gap="large")
 
         with col_graficos1:
-            renderizar_grafico_com_validacao(
-                "Ranking de Municípios por Risco de Fogo",
-                'top_risco',
-                None,
-                "Dados insuficientes para gerar o gráfico de municípios por risco de fogo."
-            )
+            st.subheader("Ranking de Municípios por Risco de Fogo")
+            with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+                st.write("""
+                Este gráfico de barras horizontais classifica os municípios pelo risco médio de fogo. 
+                Permite identificar:
+                - **Áreas críticas**: Municípios com maior suscetibilidade a incêndios
+                - **Priorização**: Localizações que necessitam de maior atenção
+                - **Recursos**: Orientação para alocação de recursos de prevenção
+                """)
+            if 'top_risco' in graficos_queimadas:
+                st.plotly_chart(graficos_queimadas['top_risco'], use_container_width=True)
+            else:
+                st.info("Dados insuficientes para gerar o gráfico de municípios por risco de fogo.")
             
-            renderizar_grafico_com_validacao(
-                "Municípios com Maior Precipitação Média",
-                'top_precip',
-                None,
-                "Dados insuficientes para gerar o gráfico de municípios por precipitação."
-            )
+            st.subheader("Municípios com Maior Precipitação Média")
+            with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+                st.write("""
+                Este gráfico mostra os municípios com maiores índices de precipitação média. 
+                Permite analisar:
+                - **Umidade**: Municípios com maior disponibilidade hídrica
+                - **Proteção natural**: Áreas com menor risco de incêndios por fatores climáticos
+                - **Contraste**: Comparação com áreas de maior risco de fogo
+                """)
+            if 'top_precip' in graficos_queimadas:
+                st.plotly_chart(graficos_queimadas['top_precip'], use_container_width=True)
+            else:
+                st.info("Dados insuficientes para gerar o gráfico de municípios por precipitação.")
 
         with col_graficos2:
             st.subheader("Distribuição Espacial do Risco de Fogo")
+            with st.expander("ℹ️ Sobre este mapa", expanded=False):
+                st.write("""
+                Este mapa interativo mostra a distribuição espacial dos focos de calor e risco de fogo na região. 
+                Permite visualizar:
+                - **Localização**: Posição geográfica dos focos de calor detectados
+                - **Intensidade**: Variação do risco de fogo por cores (amarelo a vermelho)
+                - **Concentração**: Áreas com maior densidade de focos de calor
+                """)
             if 'mapa' in graficos_queimadas:
                 st.plotly_chart(
                     graficos_queimadas['mapa'], 
@@ -1546,6 +1624,14 @@ with tabs[3]:
 
     with col1:
         st.subheader("Principais Assuntos dos Processos")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico de barras horizontais mostra os assuntos mais frequentes nos processos judiciais ambientais. 
+            Permite identificar:
+            - **Temáticas**: Principais questões ambientais em disputa judicial
+            - **Recorrência**: Assuntos que mais geram litigação na região
+            - **Políticas**: Orientação para políticas públicas preventivas
+            """)
         if not df_processos.empty:
             fig2 = fig_ranking_assuntos(df_processos)
             st.plotly_chart(fig2, use_container_width=True)
@@ -1555,6 +1641,14 @@ with tabs[3]:
 
     with col2:
         st.subheader("Principais Classes Processuais")
+        with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+            st.write("""
+            Este gráfico apresenta as classes processuais mais utilizadas em ações ambientais. 
+            Permite analisar:
+            - **Tipos de ação**: Instrumentos jurídicos mais utilizados
+            - **Estratégias**: Preferências por determinados ritos processuais
+            - **Efetividade**: Classes que mais tramitam no sistema judiciário
+            """)
         if not df_processos.empty:
             graficos = criar_graficos_processos(df_processos)
             if 'classes' in graficos:
@@ -1566,6 +1660,14 @@ with tabs[3]:
     st.divider()
     
     st.subheader("Órgãos Julgadores")
+    with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+        st.write("""
+        Este gráfico mostra a distribuição dos processos ambientais entre os diferentes órgãos do Poder Judiciário. 
+        Permite identificar:
+        - **Concentração**: Varas e juízos com maior volume de processos ambientais
+        - **Especialização**: Órgãos com maior experiência em questões ambientais
+        - **Carga de trabalho**: Distribuição da demanda judicial na região
+        """)
     if not df_processos.empty:
         fig_orgaos = fig_orgaos_julgadores(df_processos)
         if fig_orgaos.data:
@@ -1579,6 +1681,14 @@ with tabs[3]:
     st.divider()
 
     st.subheader("Histórico de Ajuizamento dos Processos") 
+    with st.expander("ℹ️ Sobre este gráfico", expanded=False):
+        st.write("""
+        Este gráfico de linha mostra a evolução temporal do ajuizamento de processos ambientais ao longo dos anos. 
+        Permite analisar:
+        - **Tendências**: Aumento ou diminuição da judicialização ambiental
+        - **Marcos**: Identificação de períodos com maior atividade judicial
+        - **Demanda**: Evolução da pressão sobre o sistema judiciário
+        """)
     if not df_processos.empty:
         fig3 = fig_evolucao_temporal_processos(df_processos)
         st.plotly_chart(fig3, use_container_width=True)
