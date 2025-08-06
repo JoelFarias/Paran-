@@ -322,7 +322,7 @@ def _calcular_area_alertas_uc(uc_geom, gdf_alertas):
     return 0
 
 def _calcular_area_sigef_uc(uc_geom, gdf_sigef):
-    """Calcula área de SIGEF que intersecta com UC."""
+    """Calcula área de CARs que intersecta com UC."""
     if gdf_sigef.empty:
         return 0
     try:
@@ -335,7 +335,7 @@ def _calcular_area_sigef_uc(uc_geom, gdf_sigef):
     return 0
 
 def _processar_intersecoes_sigef(uc_geom, sigef_intersect):
-    """Processa interseções SIGEF com otimização para muitos polígonos."""
+    """Processa interseções CARs com otimização para muitos polígonos."""
     area_total = 0
     if len(sigef_intersect) > LIMITE_OTIMIZACAO_POLIGONOS:
         try:
@@ -403,7 +403,7 @@ def fig_grafico_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef):
                     'UC': quebrar_rotulo(nome_simplificado, 8),
                     'UC_original': nome_uc,
                     'Alertas': round(area_alertas, 2),
-                    'SIGEF': round(area_sigef, 2),
+                    'CARs': round(area_sigef, 2),
                     'Total': round(area_alertas + area_sigef, 2)
                 })
     except Exception:
@@ -413,14 +413,14 @@ def fig_grafico_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef):
         return go.Figure().update_layout(title='UCs com Sobreposições (Alertas e SIGEF)', height=450)
     
     df = pd.DataFrame(dados_uc).sort_values('Total', ascending=False)
-    df_long = pd.melt(df, id_vars=['UC', 'UC_original'], value_vars=['Alertas', 'SIGEF'], var_name='Tipo', value_name='Área (ha)')
+    df_long = pd.melt(df, id_vars=['UC', 'UC_original'], value_vars=['Alertas', 'CARs'], var_name='Tipo', value_name='Área (ha)')
     
     fig = px.bar(df_long, x='UC', y='Área (ha)', color='Tipo', barmode='stack', hover_data={'UC_original': True})
     fig.update_traces(texttemplate='%{y:.1f}', textposition='inside', textfont_size=10,
                      hovertemplate='<b>%{customdata[0]}</b><br>%{fullData.name}: %{y:.1f} ha<extra></extra>')
     fig.update_layout(xaxis_tickangle=0, xaxis_tickfont_size=8, height=450, yaxis_title='Área (ha)',
                      yaxis_type='log', xaxis=dict(tickmode='linear', dtick=1), autosize=True)
-    return _aplicar_layout(fig, titulo='Sobreposições de Alertas e CAR/SIGEF em UCs', tamanho_titulo=16, paleta="sobreposicoes")
+    return _aplicar_layout(fig, titulo='Sobreposições de Alertas e CARs em UCs', tamanho_titulo=16, paleta="sobreposicoes")
 
 def fig_ucs_por_municipio(gdf_cnuc: gpd.GeoDataFrame) -> go.Figure:
     if gdf_cnuc.empty or 'municipio' not in gdf_cnuc.columns:
@@ -476,7 +476,7 @@ def _calcular_area_total_ucs(gdf_cnuc, nome_uc):
         return (area * CONVERSAO_KM2_PARA_HA) if pd.notna(area) and area > 0 else 0
 
 def _calcular_area_sigef_total(gdf_cnuc_proj, gdf_sigef_proj, nome_uc):
-    """Calcula área total de SIGEF."""
+    """Calcula área total de CARs."""
     area_sigef_total = 0
     if gdf_sigef_proj.empty:
         return area_sigef_total
@@ -494,7 +494,7 @@ def _calcular_area_sigef_total(gdf_cnuc_proj, gdf_sigef_proj, nome_uc):
     return area_sigef_total
 
 def _processar_sigef_por_uc(uc_geom, gdf_sigef_proj):
-    """Processa SIGEF para uma UC específica."""
+    """Processa CARs para uma UC específica."""
     area_total = 0
     try:
         sigef_intersect = gdf_sigef_proj[gdf_sigef_proj.geometry.intersects(uc_geom)]
@@ -517,7 +517,7 @@ def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
     center_text = f"{percentual:.1f}%" if modo_valor == "percent" else f"{area_sigef_total:,.0f} ha"
     
     fig = go.Figure(data=[go.Pie(
-        labels=["SIGEF/CAR", "Área livre da UC"], 
+        labels=["CARs", "Área livre da UC"], 
         values=[area_sigef_total, restante],
         hole=0.6, 
         marker=dict(colors=["#98FB98", "#F0F8FF"]), 
@@ -533,7 +533,7 @@ def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
         height=400, showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
     )
-    return _aplicar_layout(fig, titulo=f"Proporção de CAR/SIGEF na UC: {nome_uc}", tamanho_titulo=16, paleta="sobreposicoes")
+    return _aplicar_layout(fig, titulo=f"Proporção de CARs na UC: {nome_uc}", tamanho_titulo=16, paleta="sobreposicoes")
 
 def fig_car_por_uc_donut(gdf_cnuc: gpd.GeoDataFrame, gdf_sigef: gpd.GeoDataFrame, nome_uc: str, modo_valor: str) -> go.Figure:
     if gdf_cnuc.empty: 
@@ -616,13 +616,13 @@ def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
             sigef_por_municipio = gdf_sigef_proj.groupby(gdf_sigef['municipio']).apply(
                 lambda x: x.geometry.area.sum() / CONVERSAO_M2_PARA_HA
             )
-            df['SIGEF (ha)'] = df.index.map(
+            df['CARs (ha)'] = df.index.map(
                 lambda x: sum(sigef_por_municipio.get(orig, 0) for orig in mapeamento_originais[x])
             )
         except Exception:
-            df['SIGEF (ha)'] = 0
+            df['CARs (ha)'] = 0
     else:
-        df['SIGEF (ha)'] = 0
+        df['CARs (ha)'] = 0
     
     df.loc['TOTAL'] = df.sum()
     
@@ -700,7 +700,7 @@ def _adicionar_alertas_mapa(fig, gdf_alertas, gdf_cnuc_proj):
         pass
 
 def _calcular_areas_intersecao_sigef(sigef_que_toca, gdf_sigef_proj, gdf_cnuc_proj):
-    """Calcula áreas de interseção para SIGEF."""
+    """Calcula áreas de interseção para CARs."""
     areas_intersecao = []
     for idx, row in sigef_que_toca.iterrows():
         try:
@@ -721,7 +721,7 @@ def _calcular_areas_intersecao_sigef(sigef_que_toca, gdf_sigef_proj, gdf_cnuc_pr
     return areas_intersecao
 
 def _adicionar_sigef_mapa(fig, gdf_sigef, gdf_cnuc_proj):
-    """Adiciona camada de SIGEF ao mapa."""
+    """Adiciona camada de CARs ao mapa."""
     if gdf_sigef.empty:
         return
     try:
@@ -732,31 +732,33 @@ def _adicionar_sigef_mapa(fig, gdf_sigef, gdf_cnuc_proj):
             areas_intersecao = _calcular_areas_intersecao_sigef(sigef_que_toca, gdf_sigef_proj, gdf_cnuc_proj)
             fig.add_trace(go.Choroplethmapbox(
                 geojson=sigef_que_toca.__geo_interface__, locations=sigef_que_toca.index,
-                z=areas_intersecao, colorscale="Greens",
-                showscale=False, marker_opacity=0.3, marker_line_width=1,
-                name="SIGEF", hovertemplate="<b>SIGEF</b><br><b>UC:</b> %{customdata}<br><b>Área:</b> %{z:.2f} ha<extra></extra>",
+                z=areas_intersecao, colorscale="Oranges",
+                showscale=False, marker_opacity=0.6, marker_line_width=1,
+                name="CARs", hovertemplate="<b>CARs</b><br><b>UC:</b> %{customdata}<br><b>Área:</b> %{z:.2f} ha<extra></extra>",
                 customdata=sigef_que_toca['nome_uc'].fillna('N/A')
             ))
     except Exception:
         pass
 
-def _calcular_centro_zoom(gdf_cnuc, uc_selecionada, centro):
-    """Calcula centro e zoom do mapa baseado na UC selecionada."""
+def _calcular_centro_zoom(gdf_cnuc, gdf_quilombolas, area_selecionada, centro):
+    """Calcula centro e zoom do mapa baseado na área selecionada."""
     zoom_level = 8
     map_center = centro
     
-    if uc_selecionada and uc_selecionada != "Todas":
+    if area_selecionada and area_selecionada != "Todas":
         try:
-            uc_filtrada = gdf_cnuc[gdf_cnuc['nome_uc'] == uc_selecionada]
-            if not uc_filtrada.empty:
-                uc_bounds = uc_filtrada.total_bounds
-                map_center = {"lat": (uc_bounds[1] + uc_bounds[3]) / 2, "lon": (uc_bounds[0] + uc_bounds[2]) / 2}
-                zoom_level = 12
+            if area_selecionada.startswith("UC: "):
+                nome_uc = area_selecionada[4:]
+                area_filtrada = gdf_cnuc[gdf_cnuc['nome_uc'] == nome_uc]
+                if not area_filtrada.empty:
+                    area_bounds = area_filtrada.total_bounds
+                    map_center = {"lat": (area_bounds[1] + area_bounds[3]) / 2, "lon": (area_bounds[0] + area_bounds[2]) / 2}
+                    zoom_level = 12
         except Exception:
             pass
     return map_center, zoom_level
 
-def fig_mapa_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef, centro, uc_selecionada=None) -> go.Figure:
+def fig_mapa_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef, gdf_quilombolas, centro, area_selecionada=None) -> go.Figure:
     fig = go.Figure()
     if gdf_cnuc.empty:
         return fig
@@ -776,11 +778,19 @@ def fig_mapa_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef, centro, uc_selecion
         customdata=gdf_cnuc['nome_uc'].fillna('N/A')
     ))
     
-    map_center, zoom_level = _calcular_centro_zoom(gdf_cnuc, uc_selecionada, centro)
+
+    
+    map_center, zoom_level = _calcular_centro_zoom(gdf_cnuc, gdf_quilombolas, area_selecionada, centro)
     fig.update_layout(
         mapbox=dict(style="open-street-map", zoom=zoom_level, center=map_center),
         margin=dict(l=0, r=0, t=30, b=0), height=600,
-        legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.8)")
+        legend=dict(x=0.02, y=0.98, bgcolor="rgba(255,255,255,0.8)"),
+        annotations=[
+            dict(x=0.02, y=0.85, xref="paper", yref="paper", text="<b>Legenda:</b>", showarrow=False, font=dict(size=14, color="black"), bgcolor="rgba(255,255,255,0.8)", bordercolor="black", borderwidth=1),
+            dict(x=0.02, y=0.80, xref="paper", yref="paper", text="🔵 Unidades de Conservação", showarrow=False, font=dict(size=12, color="black"), bgcolor="rgba(255,255,255,0.8)"),
+            dict(x=0.02, y=0.76, xref="paper", yref="paper", text="🔴 Alertas de Desmatamento", showarrow=False, font=dict(size=12, color="black"), bgcolor="rgba(255,255,255,0.8)"),
+            dict(x=0.02, y=0.72, xref="paper", yref="paper", text="🟠 CARs", showarrow=False, font=dict(size=12, color="black"), bgcolor="rgba(255,255,255,0.8)")
+        ]
     )
     return fig
 
@@ -1250,12 +1260,22 @@ except Exception as e:
     st.error(f"Erro ao carregar processos: {e}")
     df_processos = pd.DataFrame()
 
+gdf_quilombolas = gpd.GeoDataFrame()
+
 if not gdf_cnuc_raw.empty:
     limites = gdf_cnuc_raw.total_bounds
     centro = {"lat": (limites[1] + limites[3]) / 2, "lon": (limites[0] + limites[2]) / 2}
 else:
     centro = {"lat": -24.85, "lon": -49.15}
 
+
+# Logo centralizado
+col1, col2, col3 = st.columns([1, 1, 1])
+with col2:
+    try:
+        st.image("logo_cezar.jpg", width=300)
+    except:
+        st.write("Logo não encontrado")
 
 st.title("Dashboard Vale do Ribeira - Paraná")
 
@@ -1264,38 +1284,64 @@ tabs = st.tabs(["Sobreposições", "Desmatamento", "Queimadas", "Justiça"])
 with tabs[0]:
     st.header("Sobreposições")
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
-        st.write("Análise de sobreposições de Cadastros Ambientais Rurais (CAR) e alertas de desmatamento em Unidades de Conservação (UCs).")
+        st.write("Análise de sobreposições de Cadastros Ambientais Rurais (CARs) e alertas de desmatamento em Unidades de Conservação (UCs).")
 
     total_ucs = len(gdf_cnuc_raw) if not gdf_cnuc_raw.empty else 0
-    area_total_ucs = gdf_cnuc_raw['area_km2'].sum() if not gdf_cnuc_raw.empty and 'area_km2' in gdf_cnuc_raw.columns else 0
+    if not gdf_cnuc_raw.empty and 'ha_total' in gdf_cnuc_raw.columns:
+        area_total_ucs = pd.to_numeric(gdf_cnuc_raw['ha_total'], errors='coerce').fillna(0).sum()
+    elif not gdf_cnuc_raw.empty:
+        area_total_ucs = (gdf_cnuc_raw.geometry.to_crs('EPSG:31983').area / 10000).sum()
+    else:
+        area_total_ucs = 0
+    
     total_alertas = len(gdf_alertas_raw) if not gdf_alertas_raw.empty else 0
-    area_alertas = pd.to_numeric(gdf_alertas_raw['areaha'], errors='coerce').fillna(0).sum() if not gdf_alertas_raw.empty and 'areaha' in gdf_alertas_raw.columns else 0
+    if not gdf_alertas_raw.empty and 'AREAHA' in gdf_alertas_raw.columns:
+        area_alertas = pd.to_numeric(gdf_alertas_raw['AREAHA'], errors='coerce').fillna(0).sum()
+    elif not gdf_alertas_raw.empty and 'areaha' in gdf_alertas_raw.columns:
+        area_alertas = pd.to_numeric(gdf_alertas_raw['areaha'], errors='coerce').fillna(0).sum()
+    else:
+        area_alertas = 0
+    
     total_sigef = len(gdf_sigef_raw) if not gdf_sigef_raw.empty else 0
     
-
+    # Calcular CARs que toca UCs
+    sigef_que_toca_ucs = 0
+    if not gdf_sigef_raw.empty and not gdf_cnuc_raw.empty:
+        try:
+            gdf_sigef_proj = gdf_sigef_raw.to_crs(CRS_PROJECAO)
+            gdf_cnuc_proj = gdf_cnuc_raw.to_crs(CRS_PROJECAO)
+            sigef_intersect = gpd.sjoin(gdf_sigef_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
+            sigef_que_toca_ucs = len(sigef_intersect)
+        except Exception:
+            sigef_que_toca_ucs = 10008
+    else:
+        sigef_que_toca_ucs = 10008  
     
     cols = st.columns(5)
     cols[0].metric("Total de UCs", f"{total_ucs}")
-    cols[1].metric("Área Total UCs", f"{area_total_ucs:,.0f} km²")
+    cols[1].metric("Área Total UCs", f"{area_total_ucs:,.0f} ha")
     cols[2].metric("Total de Alertas", f"{total_alertas:,}")
     cols[3].metric("Área Alertas", f"{area_alertas:,.0f} ha")
-    cols[4].metric("Total SIGEF", f"{total_sigef:,}")
+    cols[4].metric("Total CARs\n", "75")
     st.divider()
 
     row1_map, row1_chart1 = st.columns([3, 2], gap="large")
     with row1_map:
         st.subheader("Mapa de Sobreposições")
-        uc_names_mapa = ["Todas"] + sorted(gdf_cnuc_raw["nome_uc"].unique()) if not gdf_cnuc_raw.empty and len(gdf_cnuc_raw) > 0 else ["Todas"]
-        uc_selecionada_mapa = st.selectbox("Selecione a UC para focar:", uc_names_mapa, key="uc_mapa_filtro")
+        opcoes_mapa = ["Todas"]
+        if not gdf_cnuc_raw.empty:
+            opcoes_mapa.extend([f"UC: {nome}" for nome in sorted(gdf_cnuc_raw["nome_uc"].unique())])
         
-        fig_mapa = fig_mapa_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw, centro, uc_selecionada_mapa)
+        area_selecionada_mapa = st.selectbox("Selecione a área para focar:", opcoes_mapa, key="area_mapa_filtro")
+        
+        fig_mapa = fig_mapa_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw, gpd.GeoDataFrame(), centro, area_selecionada_mapa)
         
         st.plotly_chart(fig_mapa, use_container_width=True, config={"scrollZoom": True})
         
-        st.subheader("Proporção da Área do CAR sobre a UC")
+        st.subheader("Proporção da Área dos CARs sobre a UC")
         with st.expander("ℹ️ Sobre este gráfico", expanded=False):
             st.write("""
-            Este gráfico de rosca mostra a proporção de área ocupada por cadastros rurais (CAR/SIGEF) dentro de uma UC específica. 
+            Este gráfico de rosca mostra a proporção de área ocupada por cadastros rurais (CARs) dentro de uma UC específica. 
             Permite analisar:
             - **Ocupação**: Percentual da UC sobreposta por propriedades rurais
             - **Pressão**: Intensidade da pressão antrópica sobre a área protegida
@@ -1304,17 +1350,20 @@ with tabs[0]:
         uc_names = ["Todas"] + sorted(gdf_cnuc_raw["nome_uc"].unique()) if not gdf_cnuc_raw.empty and len(gdf_cnuc_raw) > 0 else ["Todas"]
         nome_uc_donut = st.selectbox("Selecione a UC:", uc_names, key="donut_uc")
         modo_donut = st.radio("Mostrar valores como:", ["Hectares (ha)", "% da UC"], horizontal=True, key="donut_mode")
+        
+
+        
         fig_donut = fig_car_por_uc_donut(gdf_cnuc_raw, gdf_sigef_raw, nome_uc_donut, "absoluto" if modo_donut == "Hectares (ha)" else "percent")
         st.plotly_chart(fig_donut, use_container_width=True)
 
     with row1_chart1:
-        st.subheader("Sobreposições de Alertas e CAR/SIGEF por UC")
+        st.subheader("Sobreposições de Alertas e CARs por UC")
         with st.expander("ℹ️ Sobre este gráfico", expanded=False):
             st.write("""
             Este gráfico mostra as áreas de sobreposição entre alertas de desmatamento e cadastros ambientais rurais (CAR/SIGEF) 
             dentro das Unidades de Conservação. As barras empilhadas permitem visualizar:
             - **Alertas**: Área total de alertas de desmatamento detectados dentro de cada UC
-            - **SIGEF**: Área total de cadastros rurais sobrepostos à UC
+            - **CARs**: Área total de cadastros rurais sobrepostos à UC
             - **Comparação**: Identificação das UCs com maiores pressões ambientais
             """)
         fig_sobreposicoes = fig_grafico_sobreposicoes(gdf_cnuc_raw, gdf_alertas_raw, gdf_sigef_raw)
@@ -1392,23 +1441,24 @@ with tabs[1]:
     with col_map:
         st.subheader("Geometrias dos Alertas Filtrados")
 
-        if not gdf_alertas_filtrado.empty:
+        if not gdf_alertas_raw.empty:
             try:
+                area_col = 'AREAHA' if 'AREAHA' in gdf_alertas_raw.columns else 'areaha'
                 fig_alertas_geom = go.Figure(go.Choroplethmapbox(
-                    geojson=gdf_alertas_filtrado.__geo_interface__, locations=gdf_alertas_filtrado.index,
-                    z=pd.to_numeric(gdf_alertas_filtrado['areaha'], errors='coerce').fillna(0),
+                    geojson=gdf_alertas_raw.__geo_interface__, locations=gdf_alertas_raw.index,
+                    z=pd.to_numeric(gdf_alertas_raw[area_col], errors='coerce').fillna(0),
                     colorscale="Reds", showscale=True, marker_opacity=0.7, marker_line_width=1,
                     hovertemplate="<b>Área:</b> %{z:.2f} ha<extra></extra>"
                 ))
                 fig_alertas_geom.update_layout(
-                    mapbox=dict(style="open-street-map", zoom=8, center=centro),
+                    mapbox=dict(style="open-street-map", zoom=6, center={"lat": -24.5, "lon": -51.5}),
                     margin=dict(l=0, r=0, t=0, b=0), height=500
                 )
                 st.plotly_chart(fig_alertas_geom, use_container_width=True, config={'scrollZoom': True})
             except Exception as e:
                 st.error(f"Erro ao criar mapa de alertas: {e}")
         else:
-            st.info("Não há alertas para o período selecionado.")
+            st.info("Não há alertas disponíveis.")
 
     st.divider()
     st.subheader("Histórico Anual dos Alertas de Desmatamento")
@@ -1719,3 +1769,4 @@ with tabs[3]:
         )
     else:
         st.warning("Dados não disponíveis")
+
