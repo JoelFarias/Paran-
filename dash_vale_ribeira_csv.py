@@ -310,15 +310,47 @@ def filtrar_dados_por_municipios_vale_ribeira(dados_queimadas):
 
 def _calcular_area_alertas_uc(uc_geom, gdf_alertas):
     """Calcula área de alertas que intersectam com UC."""
-    if gdf_alertas.empty or 'areaha' not in gdf_alertas.columns:
+    if gdf_alertas.empty:
         return 0
+    
+    # Identificar coluna de área
+    area_col = None
+    if 'AREAHA' in gdf_alertas.columns:
+        area_col = 'AREAHA'
+    elif 'areaha' in gdf_alertas.columns:
+        area_col = 'areaha'
+    else:
+        return 0
+    
+    # Filtrar alertas com área > 0
+    gdf_alertas_validos = gdf_alertas.copy()
+    gdf_alertas_validos[area_col] = pd.to_numeric(gdf_alertas_validos[area_col], errors='coerce').fillna(0)
+    gdf_alertas_validos = gdf_alertas_validos[gdf_alertas_validos[area_col] > 0]
+    
+    if gdf_alertas_validos.empty:
+        return 0
+    
     try:
-        alertas_proj = gdf_alertas.to_crs(CRS_PROJECAO)
-        alertas_intersect = alertas_proj[alertas_proj.geometry.intersects(uc_geom)]
+        # Garantir CRS compatível
+        alertas_proj = gdf_alertas_validos.to_crs(CRS_PROJECAO)
+        
+        # Usar spatial join para encontrar interseções
+        alertas_intersect = gpd.sjoin(alertas_proj, gpd.GeoDataFrame([0], geometry=[uc_geom], crs=CRS_PROJECAO), predicate='intersects')
+        
         if not alertas_intersect.empty:
-            return pd.to_numeric(alertas_intersect['areaha'], errors='coerce').fillna(0).sum()
+            return alertas_intersect[area_col].sum()
+            
     except Exception:
-        pass
+        # Fallback: usar bounds para aproximação
+        try:
+            alertas_proj = gdf_alertas_validos.to_crs(CRS_PROJECAO)
+            uc_bounds = uc_geom.bounds
+            alertas_na_regiao = alertas_proj.cx[uc_bounds[0]:uc_bounds[2], uc_bounds[1]:uc_bounds[3]]
+            if not alertas_na_regiao.empty:
+                return alertas_na_regiao[area_col].sum()
+        except Exception:
+            pass
+    
     return 0
 
 def _calcular_area_sigef_uc(uc_geom, gdf_sigef):
@@ -465,18 +497,31 @@ def fig_ucs_por_municipio(gdf_cnuc: gpd.GeoDataFrame) -> go.Figure:
     return _aplicar_layout(fig, titulo='Quantidade de Unidades de Conservação por Município', tamanho_titulo=16, paleta="sobreposicoes")
 
 def _calcular_area_total_ucs(gdf_cnuc, nome_uc):
-    """Calcula área total das UCs."""
+    """Calcula área total das UCs usando a mesma lógica da tabela."""
     if nome_uc == "Todas":
-        return pd.to_numeric(gdf_cnuc['area_km2'], errors='coerce').fillna(0).sum() * CONVERSAO_KM2_PARA_HA
+        area_total = 0
+        for _, uc in gdf_cnuc.iterrows():
+            if 'ha_total' in uc and pd.notna(uc['ha_total']) and pd.to_numeric(uc['ha_total'], errors='coerce') > 0:
+                area_total += pd.to_numeric(uc['ha_total'], errors='coerce')
+            elif 'area_km2' in uc and pd.notna(uc['area_km2']) and pd.to_numeric(uc['area_km2'], errors='coerce') > 0:
+                area_total += pd.to_numeric(uc['area_km2'], errors='coerce') * 100
+            else:
+                area_total += (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
+        return area_total
     else:
         uc_row = gdf_cnuc[gdf_cnuc['nome_uc'] == nome_uc]
         if uc_row.empty:
             return 0
-        area = pd.to_numeric(uc_row['area_km2'].iloc[0], errors='coerce')
-        return (area * CONVERSAO_KM2_PARA_HA) if pd.notna(area) and area > 0 else 0
+        uc = uc_row.iloc[0]
+        if 'ha_total' in uc and pd.notna(uc['ha_total']) and pd.to_numeric(uc['ha_total'], errors='coerce') > 0:
+            return pd.to_numeric(uc['ha_total'], errors='coerce')
+        elif 'area_km2' in uc and pd.notna(uc['area_km2']) and pd.to_numeric(uc['area_km2'], errors='coerce') > 0:
+            return pd.to_numeric(uc['area_km2'], errors='coerce') * 100
+        else:
+            return (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
 
 def _calcular_area_sigef_total(gdf_cnuc_proj, gdf_sigef_proj, nome_uc):
-    """Calcula área total de CARs."""
+    """Calcula área total de CARs usando a mesma lógica da tabela."""
     area_sigef_total = 0
     if gdf_sigef_proj.empty:
         return area_sigef_total
@@ -484,11 +529,27 @@ def _calcular_area_sigef_total(gdf_cnuc_proj, gdf_sigef_proj, nome_uc):
     try:
         if nome_uc == "Todas":
             for _, uc in gdf_cnuc_proj.iterrows():
-                area_sigef_total += _processar_sigef_por_uc(uc.geometry, gdf_sigef_proj)
+                uc_geom_proj = uc.geometry
+                sigef_intersect = gdf_sigef_proj[gdf_sigef_proj.geometry.intersects(uc_geom_proj)]
+                for _, sigef_pol in sigef_intersect.iterrows():
+                    try:
+                        intersecao = uc_geom_proj.intersection(sigef_pol.geometry)
+                        if not intersecao.is_empty:
+                            area_sigef_total += intersecao.area / 10000
+                    except Exception:
+                        pass
         else:
             uc_match = gdf_cnuc_proj[gdf_cnuc_proj['nome_uc'] == nome_uc]
             if not uc_match.empty:
-                area_sigef_total = _processar_sigef_por_uc(uc_match.geometry.iloc[0], gdf_sigef_proj)
+                uc_geom_proj = uc_match.geometry.iloc[0]
+                sigef_intersect = gdf_sigef_proj[gdf_sigef_proj.geometry.intersects(uc_geom_proj)]
+                for _, sigef_pol in sigef_intersect.iterrows():
+                    try:
+                        intersecao = uc_geom_proj.intersection(sigef_pol.geometry)
+                        if not intersecao.is_empty:
+                            area_sigef_total += intersecao.area / 10000
+                    except Exception:
+                        pass
     except Exception:
         pass
     return area_sigef_total
@@ -511,24 +572,51 @@ def _processar_sigef_por_uc(uc_geom, gdf_sigef_proj):
 
 def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
     """Cria o gráfico de rosca."""
+    # Não limitar área de CARs - mostrar valor real
     restante = max(0, area_total - area_sigef_total)
     percentual = (area_sigef_total / area_total) * 100 if area_total > 0 else 0
     
-    center_text = f"{percentual:.1f}%" if modo_valor == "percent" else f"{area_sigef_total:,.0f} ha"
+    if modo_valor == "percent":
+        center_text = f"{percentual:.1f}%"
+        # Se CARs > 100%, mostrar apenas CARs
+        if percentual > 100:
+            values = [100]
+            labels = ["CARs (>100%)"]
+            colors = ["#98FB98"]
+            hover_template = "<b>%{label}</b><br>Percentual Real: " + f"{percentual:.1f}%" + "<br>Área: " + f"{area_sigef_total:,.0f} ha" + "<extra></extra>"
+            customdata = None
+        else:
+            values = [percentual, 100 - percentual]
+            labels = ["CARs", "Área livre da UC"]
+            colors = ["#98FB98", "#F0F8FF"]
+            hover_template = "<b>%{label}</b><br>Percentual: %{value:.1f}%<br>Área: %{customdata:,.0f} ha<extra></extra>"
+            customdata = [area_sigef_total, restante]
+    else:
+        center_text = f"{area_sigef_total:,.0f} ha"
+        values = [area_sigef_total, restante] if restante > 0 else [area_sigef_total]
+        labels = ["CARs", "Área livre da UC"] if restante > 0 else ["CARs"]
+        colors = ["#98FB98", "#F0F8FF"] if restante > 0 else ["#98FB98"]
+        hover_template = "<b>%{label}</b><br>Área: %{value:,.0f} ha<br>Percentual: %{percent}<extra></extra>"
+        customdata = None
     
     fig = go.Figure(data=[go.Pie(
-        labels=["CARs", "Área livre da UC"], 
-        values=[area_sigef_total, restante],
+        labels=labels, 
+        values=values,
         hole=0.6, 
-        marker=dict(colors=["#98FB98", "#F0F8FF"]), 
+        marker=dict(colors=colors), 
         textinfo="none",
-        hovertemplate="<b>%{label}</b><br>Área: %{value:,.0f} ha<br>Percentual: %{percent}<extra></extra>"
+        hovertemplate=hover_template,
+        customdata=customdata
     )])
+    
+    # Manter cor do texto central padrão
+    text_color = "#333"
+    subtitle = f"UC: {area_total:,.0f} ha" if percentual > 100 else f"Total: {area_total:,.0f} ha"
     
     fig.update_layout(
         annotations=[
-            dict(text=center_text, x=0.5, y=0.52, font_size=20, showarrow=False, font_color="#333", font_weight="bold"),
-            dict(text=f"Total: {area_total:,.0f} ha", x=0.5, y=0.48, font_size=12, showarrow=False, font_color="#666")
+            dict(text=center_text, x=0.5, y=0.52, font_size=20, showarrow=False, font_color=text_color, font_weight="bold"),
+            dict(text=subtitle, x=0.5, y=0.48, font_size=12, showarrow=False, font_color="#666")
         ],
         height=400, showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
@@ -557,76 +645,60 @@ def fig_car_por_uc_donut(gdf_cnuc: gpd.GeoDataFrame, gdf_sigef: gpd.GeoDataFrame
         return go.Figure()
 
 def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
-    municipios_dados = set()
-    
-    if not gdf_cnuc.empty and 'municipio' in gdf_cnuc.columns:
-        municipios_dados.update(gdf_cnuc['municipio'].dropna().unique())
-    
-    if not gdf_alertas.empty and 'municipio' in gdf_alertas.columns:
-        municipios_dados.update(gdf_alertas['municipio'].dropna().unique())
-    
-    if not municipios_dados:
-        st.info("Não há dados de municípios disponíveis.")
+    if gdf_cnuc.empty:
+        st.info("Não há dados de UCs disponíveis.")
         return
-    def normalizar_municipio(nome):
-        nome_str = str(nome).strip()
-        if ',' in nome_str:
-            return nome_str
-        nome_limpo = nome_str.replace('(PR)', '').replace('(Pr)', '').strip()
-        return nome_limpo.title()
     
-    municipios_consolidados = {}
-    mapeamento_originais = {}
+    dados_tabela = []
     
-    for municipio_original in municipios_dados:
-        municipio_normalizado = normalizar_municipio(municipio_original)
+    for idx, uc in gdf_cnuc.iterrows():
+        nome_uc = uc['nome_uc']
         
-        if municipio_normalizado not in municipios_consolidados:
-            municipios_consolidados[municipio_normalizado] = []
-            mapeamento_originais[municipio_normalizado] = []
-        
-        municipios_consolidados[municipio_normalizado].append(municipio_original)
-        mapeamento_originais[municipio_normalizado].append(municipio_original)
-    
-    municipios_lista = sorted(list(municipios_consolidados.keys()))
-    df = pd.DataFrame(index=municipios_lista)
-
-    if not gdf_alertas.empty and 'municipio' in gdf_alertas.columns and 'areaha' in gdf_alertas.columns:
-        alertas_data = gdf_alertas.groupby('municipio')['areaha'].sum()
-        df['Alertas (ha)'] = df.index.map(
-            lambda x: sum(alertas_data.get(orig, 0) for orig in mapeamento_originais[x])
-        )
-    else:
-        df['Alertas (ha)'] = 0
-
-    if not gdf_cnuc.empty and 'municipio' in gdf_cnuc.columns:
-        if 'area_km2' in gdf_cnuc.columns:
-            cnuc_data = gdf_cnuc.groupby('municipio')['area_km2'].sum() * CONVERSAO_KM2_PARA_HA
-            df['UCs (ha)'] = df.index.map(
-                lambda x: sum(cnuc_data.get(orig, 0) for orig in mapeamento_originais[x])
-            )
+        # Área da UC
+        if 'ha_total' in uc and pd.notna(uc['ha_total']) and pd.to_numeric(uc['ha_total'], errors='coerce') > 0:
+            area_uc = pd.to_numeric(uc['ha_total'], errors='coerce')
+        elif 'area_km2' in uc and pd.notna(uc['area_km2']) and pd.to_numeric(uc['area_km2'], errors='coerce') > 0:
+            area_uc = pd.to_numeric(uc['area_km2'], errors='coerce') * 100
         else:
-            df['UCs (ha)'] = 0
-    else:
-        df['UCs (ha)'] = 0
+            area_uc = (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
         
-    if not gdf_sigef.empty and 'municipio' in gdf_sigef.columns:
-        try:
-            gdf_sigef_proj = gdf_sigef.to_crs(CRS_PROJECAO)
-            sigef_por_municipio = gdf_sigef_proj.groupby(gdf_sigef['municipio']).apply(
-                lambda x: x.geometry.area.sum() / CONVERSAO_M2_PARA_HA
-            )
-            df['CARs (ha)'] = df.index.map(
-                lambda x: sum(sigef_por_municipio.get(orig, 0) for orig in mapeamento_originais[x])
-            )
-        except Exception:
-            df['CARs (ha)'] = 0
-    else:
-        df['CARs (ha)'] = 0
+        # Calcular área de interseção dos alertas com a UC
+        uc_geom_proj = gpd.GeoSeries([uc.geometry], crs=gdf_cnuc.crs).to_crs(CRS_PROJECAO).iloc[0]
+        area_alertas = _calcular_area_alertas_uc(uc_geom_proj, gdf_alertas)
+        
+        # Calcular área total de interseção dos CARs com a UC (sem limitação)
+        area_cars = 0
+        if not gdf_sigef.empty:
+            try:
+                gdf_sigef_proj = gdf_sigef.to_crs(CRS_PROJECAO)
+                sigef_intersect = gdf_sigef_proj[gdf_sigef_proj.geometry.intersects(uc_geom_proj)]
+                
+                for _, sigef_pol in sigef_intersect.iterrows():
+                    try:
+                        intersecao = uc_geom_proj.intersection(sigef_pol.geometry)
+                        if not intersecao.is_empty:
+                            area_cars += intersecao.area / 10000
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        
+        dados_tabela.append({
+            'UC': nome_uc,
+            'Área UC (ha)': round(area_uc, 1),
+            'CARs (ha)': round(area_cars, 1)
+        })
     
-    df.loc['TOTAL'] = df.sum()
+    df = pd.DataFrame(dados_tabela)
     
-    st.dataframe(df.round(1), use_container_width=True)
+    total_row = pd.DataFrame({
+        'UC': ['TOTAL'],
+        'Área UC (ha)': [df['Área UC (ha)'].sum()],
+        'CARs (ha)': [df['CARs (ha)'].sum()]
+    })
+    df = pd.concat([df, total_row], ignore_index=True)
+    
+    st.dataframe(df, use_container_width=True)
 
 def fig_desmatamento_uc(gdf_cnuc, gdf_alertas) -> go.Figure:
     if gdf_alertas.empty: 
@@ -1387,8 +1459,27 @@ with tabs[0]:
         else:
             st.plotly_chart(fig_municipios, use_container_width=True)
     
-    st.subheader("Tabela Unificada por Município")
+    st.subheader("Tabela Unificada por UC")
     mostrar_tabela_unificada(gdf_alertas_raw, gdf_cnuc_raw, gdf_sigef_raw)
+    
+    with st.expander("ℹ️ Sobre esta tabela", expanded=False):
+        st.write("""
+        Esta tabela apresenta um resumo consolidado das informações por Unidade de Conservação (UC). 
+        
+        **Colunas da tabela:**
+        - **UC**: Nome da Unidade de Conservação
+        - **Área UC (ha)**: Área total da UC em hectares
+        - **CARs (ha)**: Área total de Cadastros Ambientais Rurais que se sobrepõem à UC
+        
+        **Interpretação:**
+        - Valores altos de CARs indicam maior pressão antrópica sobre a UC
+        - A comparação entre área da UC e área de CARs mostra a intensidade de sobreposição
+        - A linha TOTAL apresenta os somatórios de todas as UCs
+        
+        **Observações técnicas:**
+        - Valores calculados com base na interseção geométrica real entre os polígonos
+        - Mostra a área real de sobreposição sem limitações artificiais
+        """)
     st.divider()
 
 with tabs[1]:
