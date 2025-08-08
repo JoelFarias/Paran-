@@ -613,14 +613,11 @@ def _processar_sigef_por_uc(uc_geom, gdf_sigef_proj):
     return area_total
 
 def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
-    """Cria o gráfico de rosca."""
-    # Não limitar área de CARs - mostrar valor real
     restante = max(0, area_total - area_sigef_total)
     percentual = (area_sigef_total / area_total) * 100 if area_total > 0 else 0
     
     if modo_valor == "percent":
         center_text = f"{percentual:.1f}%"
-        # Se CARs > 100%, mostrar apenas CARs
         if percentual > 100:
             values = [100]
             labels = ["CARs (>100%)"]
@@ -651,7 +648,6 @@ def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
         customdata=customdata
     )])
     
-    # Manter cor do texto central padrão
     text_color = "#333"
     subtitle = f"UC: {area_total:,.0f} ha" if percentual > 100 else f"Total: {area_total:,.0f} ha"
     
@@ -1675,10 +1671,16 @@ with tabs[2]:
 
         **Municípios analisados:** Adrianópolis, Bocaiúva do Sul, Cerro Azul, Doutor Ulysses, Itaperuçu, Rio Branco do Sul, Tunas do Paraná
 
-        Os dados são provenientes do arquivo Risco_Fogo.csv.
+        **Sobre o Risco de Fogo:**
+        O valor do Risco de Fogo varia de 0.0 a 1.0 e é classificado como:
+        - **Mínimo**: abaixo de 0,15
+        - **Baixo**: de 0,15 a 0,4
+        - **Médio**: de 0,4 a 0,7
+        - **Alto**: de 0,7 a 0,95
+        - **Crítico**: acima de 0,95
         """)
         st.markdown(
-            "**Fonte Geral da Seção:** INPE – Programa Queimadas, 2025.",
+            "**Fonte:** BD Queimadas - INPE, 2025.",
             unsafe_allow_html=True
         )
 
