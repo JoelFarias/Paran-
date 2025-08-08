@@ -502,8 +502,14 @@ def fig_grafico_sobreposicoes(gdf_cnuc, gdf_alertas, gdf_sigef):
     df_long = pd.melt(df, id_vars=['UC', 'UC_original'], value_vars=['Alertas', 'CARs'], var_name='Tipo', value_name='Área (ha)')
     
     fig = px.bar(df_long, x='UC', y='Área (ha)', color='Tipo', barmode='stack', hover_data={'UC_original': True})
-    fig.update_traces(texttemplate='%{y:.1f}', textposition='inside', textfont_size=10,
-                     hovertemplate='<b>%{customdata[0]}</b><br>%{fullData.name}: %{y:.1f} ha<extra></extra>')
+    # Aplicar formatação brasileira aos valores de texto
+    for i, trace in enumerate(fig.data):
+        if hasattr(trace, 'y'):
+            trace.text = [formatar_numero_br(val) for val in trace.y]
+    
+    fig.update_traces(textposition='inside', textfont_size=10,
+                     hovertemplate='<b>%{customdata[0]}</b><br>%{fullData.name}: %{customdata[1]} ha<extra></extra>',
+                     customdata=[[row['UC_original'], formatar_numero_br(row['Área (ha)'])] for _, row in df_long.iterrows()])
     fig.update_layout(xaxis_tickangle=0, xaxis_tickfont_size=8, height=450, yaxis_title='Área (ha)',
                      yaxis_type='log', xaxis=dict(tickmode='linear', dtick=1), autosize=True)
     return _aplicar_layout(fig, titulo='Sobreposições de Alertas e CARs em UCs', tamanho_titulo=16, paleta="sobreposicoes")
@@ -534,8 +540,8 @@ def fig_ucs_por_municipio(gdf_cnuc: gpd.GeoDataFrame) -> go.Figure:
     fig.update_traces(
         texttemplate='%{text}', 
         textposition='outside',
-        hovertemplate='<b>%{customdata[1]}</b><br>UCs: %{y}<br>Área Total: %{customdata[0]:,.0f} ha<extra></extra>',
-        customdata=municipio_stats[['Área_Total_ha', 'Município']].values
+        hovertemplate='<b>%{customdata[1]}</b><br>UCs: %{y}<br>Área Total: %{customdata[0]} ha<extra></extra>',
+        customdata=[[formatar_numero_br(row['Área_Total_ha']), row['Município']] for _, row in municipio_stats.iterrows()]
     )
     
     fig.update_layout(
@@ -793,7 +799,12 @@ def fig_desmatamento_uc(gdf_cnuc, gdf_alertas) -> go.Figure:
         alert_area['local_wrap'] = alert_area['Local'].apply(lambda x: quebrar_rotulo(str(x), 8))
         
         fig = px.bar(alert_area, x='local_wrap', y='area_total', text='area_total')
-        fig.update_traces(texttemplate="%{text:,.1f}", textposition="outside")
+        fig.update_traces(textposition="outside")
+        
+        # Aplicar formatação brasileira aos valores de texto
+        for i, trace in enumerate(fig.data):
+            if hasattr(trace, 'text'):
+                trace.text = [formatar_numero_br(val) for val in alert_area['area_total']]
         fig.update_layout(
             xaxis_title="Localização",
             yaxis_title="Área de Alertas (ha)",
@@ -953,7 +964,12 @@ def fig_desmatamento_temporal(gdf_alertas) -> go.Figure:
         
         fig = px.line(temporal, x='Ano', y='Área (ha)', markers=True,
                      hover_data={'Quantidade': True}, text='Área (ha)')
-        fig.update_traces(texttemplate='%{y:.1f}', textposition='top center', mode='lines+markers+text')
+        fig.update_traces(textposition='top center', mode='lines+markers+text')
+        
+        # Aplicar formatação brasileira aos valores de texto
+        for i, trace in enumerate(fig.data):
+            if hasattr(trace, 'text'):
+                trace.text = [formatar_numero_br(val) for val in temporal['Área (ha)']]
         fig.update_layout(height=400, yaxis=dict(range=[0, temporal['Área (ha)'].max() * 1.1]))
         
         return _aplicar_layout(fig, titulo="Histórico Anual dos Alertas de Desmatamento", tamanho_titulo=16, paleta="desmatamento")
@@ -998,7 +1014,12 @@ def fig_pressoes_desmatamento(gdf_alertas) -> go.Figure:
         
         fig = px.bar(pressoes, x='Tipo de Pressão', y='Área Total (ha)', 
                     text='Área Total (ha)', hover_data={'Quantidade': True})
-        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+        fig.update_traces(textposition='outside')
+        
+        # Aplicar formatação brasileira aos valores de texto
+        for i, trace in enumerate(fig.data):
+            if hasattr(trace, 'text'):
+                trace.text = [formatar_numero_br(val) for val in pressoes['Área Total (ha)']]
         fig.update_layout(
             height=400,
             yaxis=dict(range=[0, pressoes['Área Total (ha)'].max() * 1.1])
@@ -1040,7 +1061,7 @@ def _criar_grafico_temporal_risco(df):
     fig = px.line(monthly_risco, x='DataHora_str', y='RiscoFogo', markers=True,
                   labels={'DataHora_str': 'Mês/Ano', 'RiscoFogo': 'Risco Médio de Fogo'})
     fig.update_traces(line_color='#FFD1DC', marker_color='#FFD1DC', mode='lines+markers+text',
-                     text=monthly_risco['RiscoFogo'].round(3), textposition='top center')
+                     text=[f"{val:.3f}".replace(".", ",") for val in monthly_risco['RiscoFogo']], textposition='top center')
     fig.update_layout(height=400, autosize=True)
     return _aplicar_layout(fig, "Variação Mensal do Risco de Fogo", 16, "queimadas")
 
@@ -1059,7 +1080,7 @@ def _criar_grafico_top_risco(df):
     top_risco = df_risco.groupby('Municipio')['RiscoFogo'].mean().nlargest(TOP_MUNICIPIOS_LIMITE).sort_values()
     
     fig = go.Figure(go.Bar(y=top_risco.index, x=top_risco.values, orientation='h',
-                          marker_color='#F0E68C', text=top_risco.values.round(3), textposition='outside'))
+                          marker_color='#F0E68C', text=[f"{val:.3f}".replace(".", ",") for val in top_risco.values], textposition='outside'))
     fig.update_layout(height=300, xaxis_title='Risco Médio de Fogo', yaxis_title='Município', autosize=True, xaxis=dict(range=[0, top_risco.max() * 1.1]))
     return _aplicar_layout(fig, "Ranking de Municípios por Risco de Fogo", 16, "queimadas")
 
@@ -1078,7 +1099,7 @@ def _criar_grafico_top_precipitacao(df):
     top_precip = df_precip.groupby('Municipio')['Precipitacao'].mean().nlargest(TOP_MUNICIPIOS_LIMITE).sort_values()
     
     fig = go.Figure(go.Bar(y=top_precip.index, x=top_precip.values, orientation='h',
-                          marker_color='#B5E7A0', text=[f'{x:.1f} mm' for x in top_precip.values], textposition='outside'))
+                          marker_color='#B5E7A0', text=[f'{x:.1f} mm'.replace(".", ",") for x in top_precip.values], textposition='outside'))
     fig.update_layout(height=300, xaxis_title='Precipitação Média (mm)', yaxis_title='Município', autosize=True, xaxis=dict(range=[0, top_precip.max() * 1.1]))
     return _aplicar_layout(fig, "Ranking de Municípios por Precipitação", 16, "queimadas")
 
