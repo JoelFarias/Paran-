@@ -306,6 +306,48 @@ def filtrar_dados_por_municipios_vale_ribeira(dados_queimadas):
         dados_copia['municipio_normalizado'].isin(MUNICIPIOS_VALE_RIBEIRA)
     ].copy()
 
+def filtrar_queimadas_em_ucs(df_queimadas, gdf_cnuc):
+    """Retorna apenas as queimadas que intersectam com UCs (não altera df original)."""
+    if df_queimadas.empty or gdf_cnuc.empty:
+        return pd.DataFrame()
+
+    if not {'Latitude', 'Longitude'}.issubset(df_queimadas.columns):
+        return pd.DataFrame()
+
+    try:
+        df_clean = df_queimadas.copy()
+        df_clean['Latitude'] = pd.to_numeric(df_clean['Latitude'], errors='coerce')
+        df_clean['Longitude'] = pd.to_numeric(df_clean['Longitude'], errors='coerce')
+        df_clean = df_clean.dropna(subset=['Latitude', 'Longitude'])
+        df_clean = df_clean[
+            df_clean['Latitude'].between(-90, 90) &
+            df_clean['Longitude'].between(-180, 180)
+        ]
+
+        if df_clean.empty:
+            return pd.DataFrame()
+
+        gdf_queimadas = gpd.GeoDataFrame(
+            df_clean,
+            geometry=gpd.points_from_xy(df_clean.Longitude, df_clean.Latitude),
+            crs=CRS_GEOGRAFICO
+        )
+
+        if gdf_cnuc.crs != CRS_GEOGRAFICO:
+            gdf_cnuc = gdf_cnuc.to_crs(CRS_GEOGRAFICO)
+
+        queimadas_em_ucs = gpd.sjoin(
+            gdf_queimadas, gdf_cnuc,
+            how="inner",
+            predicate="intersects"
+        )
+
+        return queimadas_em_ucs.drop(columns=['geometry', 'index_right'], errors='ignore')
+
+    except Exception as e:
+        st.warning(f"Erro ao filtrar queimadas em UCs: {e}")
+        return pd.DataFrame()
+
 # ======================= FUNÇÕES DE GRÁFICOS =======================
 
 def _calcular_area_alertas_uc(uc_geom, gdf_alertas):
@@ -706,24 +748,29 @@ def fig_desmatamento_uc(gdf_cnuc, gdf_alertas) -> go.Figure:
     
     try:
         gdf_alertas = gdf_alertas.copy()
-        gdf_alertas['areaha'] = pd.to_numeric(gdf_alertas['areaha'], errors='coerce').fillna(0)
-
-        gdf_alertas = gdf_alertas[gdf_alertas['areaha'] > 0]
+        
+        # Identificar coluna de área correta
+        area_col = 'AREAHA' if 'AREAHA' in gdf_alertas.columns else 'areaha'
+        if area_col not in gdf_alertas.columns:
+            return go.Figure()
+            
+        gdf_alertas[area_col] = pd.to_numeric(gdf_alertas[area_col], errors='coerce').fillna(0)
+        gdf_alertas = gdf_alertas[gdf_alertas[area_col] > 0]
         
         if gdf_alertas.empty:
             return go.Figure()
         if 'municipio' in gdf_alertas.columns:
-            alert_area = gdf_alertas.groupby('municipio')['areaha'].sum().reset_index()
+            alert_area = gdf_alertas.groupby('municipio')[area_col].sum().reset_index()
             alert_area.columns = ['Local', 'area_total']
         else:
             if 'anodetec' in gdf_alertas.columns:
-                alert_area = gdf_alertas.groupby('anodetec')['areaha'].sum().reset_index()
+                alert_area = gdf_alertas.groupby('anodetec')[area_col].sum().reset_index()
                 alert_area.columns = ['Local', 'area_total']
                 alert_area['Local'] = alert_area['Local'].astype(str, errors='ignore')
             else:
                 alert_area = pd.DataFrame({
                     'Local': ['Total da Região'],
-                    'area_total': [gdf_alertas['areaha'].sum()]
+                    'area_total': [gdf_alertas[area_col].sum()]
                 })
         
         alert_area = alert_area.sort_values('area_total', ascending=False)
@@ -873,20 +920,12 @@ def fig_desmatamento_temporal(gdf_alertas) -> go.Figure:
     try:
         df = gdf_alertas.copy()
         
-        ano_col = None
-        if 'ANODETEC' in df.columns:
-            ano_col = 'ANODETEC'
-        elif 'anodetec' in df.columns:
-            ano_col = 'anodetec'
-        else:
+        ano_col = 'ANODETEC' if 'ANODETEC' in df.columns else 'anodetec'
+        if ano_col not in df.columns:
             return go.Figure()
         
-        area_col = None
-        if 'AREAHA' in df.columns:
-            area_col = 'AREAHA'
-        elif 'areaha' in df.columns:
-            area_col = 'areaha'
-        else:
+        area_col = 'AREAHA' if 'AREAHA' in df.columns else 'areaha'
+        if area_col not in df.columns:
             return go.Figure()
         
         df[ano_col] = pd.to_numeric(df[ano_col], errors='coerce')
@@ -917,20 +956,12 @@ def fig_pressoes_desmatamento(gdf_alertas) -> go.Figure:
     
     try:
         df = gdf_alertas.copy()
-        pressao_col = None
-        if 'VPRESSAO' in df.columns:
-            pressao_col = 'VPRESSAO'
-        elif 'vpressao' in df.columns:
-            pressao_col = 'vpressao'
-        else:
+        pressao_col = 'VPRESSAO' if 'VPRESSAO' in df.columns else 'vpressao'
+        if pressao_col not in df.columns:
             return go.Figure()
         
-        area_col = None
-        if 'AREAHA' in df.columns:
-            area_col = 'AREAHA'
-        elif 'areaha' in df.columns:
-            area_col = 'areaha'
-        else:
+        area_col = 'AREAHA' if 'AREAHA' in df.columns else 'areaha'
+        if area_col not in df.columns:
             return go.Figure()
         
         df[area_col] = pd.to_numeric(df[area_col], errors='coerce').fillna(0)
@@ -1070,6 +1101,25 @@ def _criar_mapa_focos_calor(df):
         center={'lat': df_map['Latitude'].mean(), 'lon': df_map['Longitude'].mean()}, height=500
     )
     fig.update_traces(marker=dict(size=10, opacity=0.8))
+    
+    # Adicionar geometrias das UCs
+    try:
+        if not gdf_cnuc_raw.empty:
+            fig.add_trace(go.Choroplethmapbox(
+                geojson=gdf_cnuc_raw.__geo_interface__, 
+                locations=gdf_cnuc_raw.index,
+                z=[1] * len(gdf_cnuc_raw),
+                colorscale=[[0, "blue"], [1, "blue"]],
+                showscale=False, 
+                marker_opacity=0.3, 
+                marker_line_width=2,
+                name="UCs", 
+                hovertemplate="<b>UC:</b> %{customdata}<extra></extra>",
+                customdata=gdf_cnuc_raw['nome_uc'].fillna('N/A')
+            ))
+    except Exception:
+        pass
+    
     fig.update_layout(
         coloraxis_showscale=True, 
         mapbox_style="open-street-map",
@@ -1358,43 +1408,62 @@ with tabs[0]:
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
         st.write("Análise de sobreposições de Cadastros Ambientais Rurais (CARs) e alertas de desmatamento em Unidades de Conservação (UCs).")
 
+    # Calcular métricas das UCs usando a mesma lógica da tabela
     total_ucs = len(gdf_cnuc_raw) if not gdf_cnuc_raw.empty else 0
-    if not gdf_cnuc_raw.empty and 'ha_total' in gdf_cnuc_raw.columns:
-        area_total_ucs = pd.to_numeric(gdf_cnuc_raw['ha_total'], errors='coerce').fillna(0).sum()
-    elif not gdf_cnuc_raw.empty:
-        area_total_ucs = (gdf_cnuc_raw.geometry.to_crs('EPSG:31983').area / 10000).sum()
-    else:
-        area_total_ucs = 0
+    area_total_ucs = 0
+    if not gdf_cnuc_raw.empty:
+        for _, uc in gdf_cnuc_raw.iterrows():
+            if 'ha_total' in uc and pd.notna(uc['ha_total']) and pd.to_numeric(uc['ha_total'], errors='coerce') > 0:
+                area_total_ucs += pd.to_numeric(uc['ha_total'], errors='coerce')
+            elif 'area_km2' in uc and pd.notna(uc['area_km2']) and pd.to_numeric(uc['area_km2'], errors='coerce') > 0:
+                area_total_ucs += pd.to_numeric(uc['area_km2'], errors='coerce') * 100
+            else:
+                area_total_ucs += (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
     
-    total_alertas = len(gdf_alertas_raw) if not gdf_alertas_raw.empty else 0
-    if not gdf_alertas_raw.empty and 'AREAHA' in gdf_alertas_raw.columns:
-        area_alertas = pd.to_numeric(gdf_alertas_raw['AREAHA'], errors='coerce').fillna(0).sum()
-    elif not gdf_alertas_raw.empty and 'areaha' in gdf_alertas_raw.columns:
-        area_alertas = pd.to_numeric(gdf_alertas_raw['areaha'], errors='coerce').fillna(0).sum()
-    else:
-        area_alertas = 0
-    
-    total_sigef = len(gdf_sigef_raw) if not gdf_sigef_raw.empty else 0
-    
-    # Calcular CARs que toca UCs
-    sigef_que_toca_ucs = 0
-    if not gdf_sigef_raw.empty and not gdf_cnuc_raw.empty:
+    # Calcular alertas que intersectam UCs
+    alertas_em_ucs = 0
+    area_alertas_ucs = 0
+    if not gdf_alertas_raw.empty and not gdf_cnuc_raw.empty:
         try:
-            gdf_sigef_proj = gdf_sigef_raw.to_crs(CRS_PROJECAO)
+            gdf_alertas_proj = gdf_alertas_raw.to_crs(CRS_PROJECAO)
             gdf_cnuc_proj = gdf_cnuc_raw.to_crs(CRS_PROJECAO)
-            sigef_intersect = gpd.sjoin(gdf_sigef_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
-            sigef_que_toca_ucs = len(sigef_intersect)
-        except Exception:
-            sigef_que_toca_ucs = 10008
-    else:
-        sigef_que_toca_ucs = 10008  
+            alertas_intersect = gpd.sjoin(gdf_alertas_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
+            alertas_em_ucs = len(alertas_intersect)
+            # Usar a coluna correta areaha_left
+            if 'areaha_left' in alertas_intersect.columns:
+                area_alertas_ucs = pd.to_numeric(alertas_intersect['areaha_left'], errors='coerce').fillna(0).sum()
+        except Exception as e:
+            pass
     
-    cols = st.columns(5)
-    cols[0].metric("Total de UCs", f"{total_ucs}")
-    cols[1].metric("Área Total UCs", f"{area_total_ucs:,.0f} ha")
-    cols[2].metric("Total de Alertas", f"{total_alertas:,}")
-    cols[3].metric("Área Alertas", f"{area_alertas:,.0f} ha")
-    cols[4].metric("Total CARs\n", "75")
+    # Calcular métricas dos municípios
+    total_municipios = 7  # Municípios do Vale do Ribeira
+    area_total_municipios = 0  # Placeholder - seria necessário dados dos municípios
+    
+    total_alertas_municipios = len(gdf_alertas_raw) if not gdf_alertas_raw.empty else 0
+    area_alertas_municipios = 0
+    if not gdf_alertas_raw.empty:
+        area_col = 'AREAHA' if 'AREAHA' in gdf_alertas_raw.columns else 'areaha'
+        if area_col in gdf_alertas_raw.columns:
+            area_alertas_municipios = pd.to_numeric(gdf_alertas_raw[area_col], errors='coerce').fillna(0).sum()
+    
+    total_cars_municipios = len(gdf_sigef_raw) if not gdf_sigef_raw.empty else 0
+    
+    # Primeira linha - UCs
+    st.write("**Unidades de Conservação:**")
+    cols1 = st.columns(5)
+    cols1[0].metric("UCs", f"{total_ucs}")
+    cols1[1].metric("Área Total UCs (ha)", f"{area_total_ucs:,.0f}")
+    cols1[2].metric("Alertas em UCs", f"{alertas_em_ucs}")
+    cols1[3].metric("Área Alertas UCs (ha)", f"{area_alertas_ucs:,.1f}")
+    cols1[4].metric("CARs", "75")
+    
+    # Segunda linha - Municípios
+    st.write("**Municípios do Vale do Ribeira:**")
+    cols2 = st.columns(4)
+    cols2[0].metric("Municípios", f"{total_municipios}")
+    cols2[1].metric("Alertas Municípios", f"{total_alertas_municipios}")
+    cols2[2].metric("Área Alertas (ha)", f"{area_alertas_municipios:,.0f}")
+    cols2[3].metric("CARs Municípios", f"{total_cars_municipios}")
     st.divider()
 
     row1_map, row1_chart1 = st.columns([3, 2], gap="large")
@@ -1740,6 +1809,68 @@ with tabs[2]:
             )
         else:
             st.info("Sem dados válidos para este ranking.")
+        
+        st.divider()
+        
+        # Seção de queimadas em UCs
+        st.subheader("Focos de Calor em Unidades de Conservação")
+        
+        with st.expander("ℹ️ Sobre esta seção", expanded=False):
+            st.write("""
+            Esta seção mostra especificamente os focos de calor que foram detectados dentro dos limites 
+            das Unidades de Conservação, utilizando análise espacial para determinar a interseção entre 
+            as coordenadas dos focos e os polígonos das UCs.
+            """)
+        
+        queimadas_em_ucs = filtrar_queimadas_em_ucs(df_queimadas_filtrado, gdf_cnuc_raw)
+        
+        if not queimadas_em_ucs.empty:
+            # Métricas principais
+            total_focos_ucs = len(queimadas_em_ucs)
+            total_focos_geral = len(df_queimadas_filtrado)
+            percentual = (total_focos_ucs / total_focos_geral * 100) if total_focos_geral > 0 else 0
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Focos em UCs", f"{total_focos_ucs:,}")
+            col2.metric("Total de Focos", f"{total_focos_geral:,}")
+            col3.metric("% em UCs", f"{percentual:.1f}%")
+            
+            # Ranking de UCs com mais focos
+            if 'nome_uc' in queimadas_em_ucs.columns:
+                ranking_ucs = queimadas_em_ucs['nome_uc'].value_counts().head(10).reset_index()
+                ranking_ucs.columns = ['UC', 'Quantidade de Focos']
+                ranking_ucs['Percentual'] = (ranking_ucs['Quantidade de Focos'] / total_focos_ucs * 100).round(1)
+                
+                st.write("**Ranking de UCs com mais focos de calor:**")
+                st.dataframe(ranking_ucs, use_container_width=True, hide_index=True)
+            
+            # Tabela completa com validações
+            st.write("**Dados completos dos focos em UCs:**")
+            queimadas_display = queimadas_em_ucs.copy()
+            
+            # Formatar data se existir
+            if 'DataHora' in queimadas_display.columns:
+                queimadas_display['DataHora'] = pd.to_datetime(queimadas_display['DataHora'], errors='coerce')
+                queimadas_display['DataHora'] = queimadas_display['DataHora'].dt.strftime('%d/%m/%Y %H:%M')
+            
+            # Arredondar coordenadas para melhor visualização
+            if 'Latitude' in queimadas_display.columns:
+                queimadas_display['Latitude'] = queimadas_display['Latitude'].round(6)
+            if 'Longitude' in queimadas_display.columns:
+                queimadas_display['Longitude'] = queimadas_display['Longitude'].round(6)
+            
+            st.dataframe(queimadas_display, use_container_width=True, hide_index=True, height=300)
+            
+            # Botão de download
+            csv_data = queimadas_display.to_csv(index=False)
+            st.download_button(
+                label="📅 Baixar focos em UCs como CSV",
+                data=csv_data,
+                file_name=f"focos_calor_ucs_{ano_global_selecionado if ano_global_selecionado != 'Todos' else 'todos_anos'}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("Nenhum foco de calor detectado dentro das Unidades de Conservação para o período selecionado.")
     else:
         st.error("Não foi possível carregar os dados de queimadas. Verifique se o arquivo Risco_Fogo.csv está disponível.")
 
