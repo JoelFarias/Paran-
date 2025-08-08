@@ -12,6 +12,18 @@ from functools import lru_cache
 
 warnings.filterwarnings('ignore')
 
+def formatar_numero_br(numero):
+    """Formata números no padrão brasileiro: ponto para milhares, vírgula para decimais."""
+    if pd.isna(numero) or numero == 0:
+        return "0"
+    
+    # Se for inteiro ou decimal com parte decimal zero
+    if numero == int(numero):
+        return f"{int(numero):,}".replace(",", ".")
+    
+    # Para decimais, formatar com 1 casa decimal
+    return f"{numero:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 st.set_page_config(
     page_title="Dashboard Vale do Ribeira - PR",
     page_icon="🌳",
@@ -88,7 +100,7 @@ h1 {
 </style>
 """, unsafe_allow_html=True)
 
-# ======================= CONFIGURAÇÕES =======================
+
 
 PASTEL_COLORS = [
     "#B5E7A0", "#FFD1DC", "#E6E6FA", "#F0E68C", "#FFA07A", 
@@ -100,7 +112,7 @@ MUNICIPIOS_VALE_RIBEIRA = [
     "DOUTOR ULYSSES", "ITAPERUÇU", "RIO BRANCO DO SUL", "TUNAS DO PARANÁ"
 ]
 
-# Constantes
+
 CRS_PROJECAO = "EPSG:31983"
 CRS_GEOGRAFICO = "EPSG:4326"
 CONVERSAO_M2_PARA_HA = 10000
@@ -110,7 +122,7 @@ TOP_MUNICIPIOS_LIMITE = 7
 LIMITE_OTIMIZACAO_POLIGONOS = 100
 TAMANHO_AMOSTRA_MAPA = 50000
 
-# Cache para operações geométricas
+
 @st.cache_data
 def calcular_intersecoes_cache(uc_id, sigef_ids):
     """Cache para cálculos de interseção pesados."""
@@ -165,7 +177,7 @@ def truncar_rotulo(nome, tamanho_max=20):
     nome_str = str(nome)
     return nome_str[:tamanho_max] + "..." if len(nome_str) > tamanho_max else nome_str
 
-# ======================= FUNÇÕES AUXILIARES =======================
+
 
 def carregar_dados_processos(caminho_arquivo):
     """Carrega e processa dados de processos judiciais."""
@@ -348,7 +360,7 @@ def filtrar_queimadas_em_ucs(df_queimadas, gdf_cnuc):
         st.warning(f"Erro ao filtrar queimadas em UCs: {e}")
         return pd.DataFrame()
 
-# ======================= FUNÇÕES DE GRÁFICOS =======================
+
 
 def _calcular_area_alertas_uc(uc_geom, gdf_alertas):
     """Calcula área de alertas que intersectam com UC."""
@@ -617,26 +629,26 @@ def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
     percentual = (area_sigef_total / area_total) * 100 if area_total > 0 else 0
     
     if modo_valor == "percent":
-        center_text = f"{percentual:.1f}%"
+        center_text = f"{percentual:.1f}%".replace(".", ",")
         if percentual > 100:
             values = [100]
             labels = ["CARs (>100%)"]
             colors = ["#98FB98"]
-            hover_template = "<b>%{label}</b><br>Percentual Real: " + f"{percentual:.1f}%" + "<br>Área: " + f"{area_sigef_total:,.0f} ha" + "<extra></extra>"
+            hover_template = "<b>%{label}</b><br>Percentual Real: " + f"{percentual:.1f}%".replace(".", ",") + "<br>Área: " + formatar_numero_br(area_sigef_total) + " ha" + "<extra></extra>"
             customdata = None
         else:
             values = [percentual, 100 - percentual]
             labels = ["CARs", "Área livre da UC"]
             colors = ["#98FB98", "#F0F8FF"]
-            hover_template = "<b>%{label}</b><br>Percentual: %{value:.1f}%<br>Área: %{customdata:,.0f} ha<extra></extra>"
-            customdata = [area_sigef_total, restante]
+            hover_template = "<b>%{label}</b><br>Percentual: %{value:.1f}%<br>Área: %{customdata} ha<extra></extra>"
+            customdata = [formatar_numero_br(area_sigef_total), formatar_numero_br(restante)]
     else:
-        center_text = f"{area_sigef_total:,.0f} ha"
+        center_text = formatar_numero_br(area_sigef_total) + " ha"
         values = [area_sigef_total, restante] if restante > 0 else [area_sigef_total]
         labels = ["CARs", "Área livre da UC"] if restante > 0 else ["CARs"]
         colors = ["#98FB98", "#F0F8FF"] if restante > 0 else ["#98FB98"]
-        hover_template = "<b>%{label}</b><br>Área: %{value:,.0f} ha<br>Percentual: %{percent}<extra></extra>"
-        customdata = None
+        hover_template = "<b>%{label}</b><br>Área: %{customdata} ha<br>Percentual: %{percent}<extra></extra>"
+        customdata = [formatar_numero_br(val) for val in values]
     
     fig = go.Figure(data=[go.Pie(
         labels=labels, 
@@ -649,7 +661,7 @@ def _criar_grafico_donut(area_sigef_total, area_total, modo_valor, nome_uc):
     )])
     
     text_color = "#333"
-    subtitle = f"UC: {area_total:,.0f} ha" if percentual > 100 else f"Total: {area_total:,.0f} ha"
+    subtitle = f"UC: {formatar_numero_br(area_total)} ha" if percentual > 100 else f"Total: {formatar_numero_br(area_total)} ha"
     
     fig.update_layout(
         annotations=[
@@ -692,7 +704,7 @@ def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
     for idx, uc in gdf_cnuc.iterrows():
         nome_uc = uc['nome_uc']
         
-        # Área da UC
+
         if 'ha_total' in uc and pd.notna(uc['ha_total']) and pd.to_numeric(uc['ha_total'], errors='coerce') > 0:
             area_uc = pd.to_numeric(uc['ha_total'], errors='coerce')
         elif 'area_km2' in uc and pd.notna(uc['area_km2']) and pd.to_numeric(uc['area_km2'], errors='coerce') > 0:
@@ -700,11 +712,11 @@ def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
         else:
             area_uc = (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
         
-        # Calcular área de interseção dos alertas com a UC
+
         uc_geom_proj = gpd.GeoSeries([uc.geometry], crs=gdf_cnuc.crs).to_crs(CRS_PROJECAO).iloc[0]
         area_alertas = _calcular_area_alertas_uc(uc_geom_proj, gdf_alertas)
         
-        # Calcular área total de interseção dos CARs com a UC (sem limitação)
+
         area_cars = 0
         if not gdf_sigef.empty:
             try:
@@ -723,16 +735,20 @@ def mostrar_tabela_unificada(gdf_alertas, gdf_cnuc, gdf_sigef):
         
         dados_tabela.append({
             'UC': nome_uc,
-            'Área UC (ha)': round(area_uc, 1),
-            'CARs (ha)': round(area_cars, 1)
+            'Área UC (ha)': formatar_numero_br(round(area_uc, 1)),
+            'CARs (ha)': formatar_numero_br(round(area_cars, 1))
         })
     
     df = pd.DataFrame(dados_tabela)
     
+
+    total_uc = sum([float(str(val).replace(".", "").replace(",", ".")) for val in df['Área UC (ha)'] if val != 'TOTAL'])
+    total_cars = sum([float(str(val).replace(".", "").replace(",", ".")) for val in df['CARs (ha)'] if val != 'TOTAL'])
+    
     total_row = pd.DataFrame({
         'UC': ['TOTAL'],
-        'Área UC (ha)': [df['Área UC (ha)'].sum()],
-        'CARs (ha)': [df['CARs (ha)'].sum()]
+        'Área UC (ha)': [formatar_numero_br(total_uc)],
+        'CARs (ha)': [formatar_numero_br(total_cars)]
     })
     df = pd.concat([df, total_row], ignore_index=True)
     
@@ -745,7 +761,7 @@ def fig_desmatamento_uc(gdf_cnuc, gdf_alertas) -> go.Figure:
     try:
         gdf_alertas = gdf_alertas.copy()
         
-        # Identificar coluna de área correta
+
         area_col = 'AREAHA' if 'AREAHA' in gdf_alertas.columns else 'areaha'
         if area_col not in gdf_alertas.columns:
             return go.Figure()
@@ -1345,7 +1361,7 @@ def fig_orgaos_julgadores(df):
     
     return _aplicar_layout(fig, titulo="Distribuição por Órgão Julgador", tamanho_titulo=14, paleta="justica")
 
-# ======================= CARREGAMENTO DOS DADOS =======================
+
 global gdf_cnuc_raw, gdf_sigef_raw, gdf_alertas_raw, df_queimadas_raw, df_processos, centro
 
 try:
@@ -1387,7 +1403,7 @@ else:
     centro = {"lat": -24.85, "lon": -49.15}
 
 
-# Logo centralizado
+
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     try:
@@ -1404,7 +1420,7 @@ with tabs[0]:
     with st.expander("ℹ️ Sobre esta seção", expanded=True):
         st.write("Análise de sobreposições de Cadastros Ambientais Rurais (CARs) e alertas de desmatamento em Unidades de Conservação (UCs).")
 
-    # Calcular métricas das UCs usando a mesma lógica da tabela
+
     total_ucs = len(gdf_cnuc_raw) if not gdf_cnuc_raw.empty else 0
     area_total_ucs = 0
     if not gdf_cnuc_raw.empty:
@@ -1416,7 +1432,7 @@ with tabs[0]:
             else:
                 area_total_ucs += (uc.geometry.to_crs(CRS_PROJECAO).area / 10000)
     
-    # Calcular alertas que intersectam UCs
+
     alertas_em_ucs = 0
     area_alertas_ucs = 0
     if not gdf_alertas_raw.empty and not gdf_cnuc_raw.empty:
@@ -1425,13 +1441,13 @@ with tabs[0]:
             gdf_cnuc_proj = gdf_cnuc_raw.to_crs(CRS_PROJECAO)
             alertas_intersect = gpd.sjoin(gdf_alertas_proj, gdf_cnuc_proj, how="inner", predicate="intersects")
             alertas_em_ucs = len(alertas_intersect)
-            # Usar a coluna correta areaha_left
+
             if 'areaha_left' in alertas_intersect.columns:
                 area_alertas_ucs = pd.to_numeric(alertas_intersect['areaha_left'], errors='coerce').fillna(0).sum()
         except Exception as e:
             pass
     
-    # Calcular métricas dos municípios
+
     total_municipios = 7  # Municípios do Vale do Ribeira
     area_total_municipios = 0  # Placeholder - seria necessário dados dos municípios
     
@@ -1444,22 +1460,22 @@ with tabs[0]:
     
     total_cars_municipios = len(gdf_sigef_raw) if not gdf_sigef_raw.empty else 0
     
-    # Primeira linha - UCs
+
     st.write("**Unidades de Conservação:**")
     cols1 = st.columns(5)
     cols1[0].metric("UCs", f"{total_ucs}")
-    cols1[1].metric("Área Total UCs (ha)", f"{area_total_ucs:,.0f}")
-    cols1[2].metric("Alertas em UCs", f"{alertas_em_ucs}")
-    cols1[3].metric("Área Alertas UCs (ha)", f"{area_alertas_ucs:,.1f}")
+    cols1[1].metric("Área Total UCs (ha)", formatar_numero_br(area_total_ucs))
+    cols1[2].metric("Alertas em UCs", formatar_numero_br(alertas_em_ucs))
+    cols1[3].metric("Área Alertas UCs (ha)", formatar_numero_br(area_alertas_ucs))
     cols1[4].metric("CARs", "75")
     
-    # Segunda linha - Municípios
+
     st.write("**Municípios do Vale do Ribeira:**")
     cols2 = st.columns(4)
     cols2[0].metric("Municípios", f"{total_municipios}")
-    cols2[1].metric("Alertas Municípios", f"{total_alertas_municipios}")
-    cols2[2].metric("Área Alertas (ha)", f"{area_alertas_municipios:,.0f}")
-    cols2[3].metric("CARs Municípios", f"{total_cars_municipios}")
+    cols2[1].metric("Alertas Municípios", formatar_numero_br(total_alertas_municipios))
+    cols2[2].metric("Área Alertas (ha)", formatar_numero_br(area_alertas_municipios))
+    cols2[3].metric("CARs Municípios", formatar_numero_br(total_cars_municipios))
     st.divider()
 
     row1_map, row1_chart1 = st.columns([3, 2], gap="large")
@@ -1814,7 +1830,7 @@ with tabs[2]:
         
         st.divider()
         
-        # Seção de queimadas em UCs
+
         st.subheader("Focos de Calor em Unidades de Conservação")
         
         with st.expander("ℹ️ Sobre esta seção", expanded=False):
@@ -1827,17 +1843,17 @@ with tabs[2]:
         queimadas_em_ucs = filtrar_queimadas_em_ucs(df_queimadas_filtrado, gdf_cnuc_raw)
         
         if not queimadas_em_ucs.empty:
-            # Métricas principais
+
             total_focos_ucs = len(queimadas_em_ucs)
             total_focos_geral = len(df_queimadas_filtrado)
             percentual = (total_focos_ucs / total_focos_geral * 100) if total_focos_geral > 0 else 0
             
             col1, col2, col3 = st.columns(3)
-            col1.metric("Focos em UCs", f"{total_focos_ucs:,}")
-            col2.metric("Total de Focos", f"{total_focos_geral:,}")
-            col3.metric("% em UCs", f"{percentual:.1f}%")
+            col1.metric("Focos em UCs", formatar_numero_br(total_focos_ucs))
+            col2.metric("Total de Focos", formatar_numero_br(total_focos_geral))
+            col3.metric("% em UCs", f"{percentual:.1f}%".replace(".", ","))
             
-            # Ranking de UCs com mais focos
+
             if 'nome_uc' in queimadas_em_ucs.columns:
                 ranking_ucs = queimadas_em_ucs['nome_uc'].value_counts().head(10).reset_index()
                 ranking_ucs.columns = ['UC', 'Quantidade de Focos']
@@ -1846,16 +1862,16 @@ with tabs[2]:
                 st.write("**Ranking de UCs com mais focos de calor:**")
                 st.dataframe(ranking_ucs, use_container_width=True, hide_index=True)
             
-            # Tabela completa com validações
+
             st.write("**Dados completos dos focos em UCs:**")
             queimadas_display = queimadas_em_ucs.copy()
             
-            # Formatar data se existir
+
             if 'DataHora' in queimadas_display.columns:
                 queimadas_display['DataHora'] = pd.to_datetime(queimadas_display['DataHora'], errors='coerce')
                 queimadas_display['DataHora'] = queimadas_display['DataHora'].dt.strftime('%d/%m/%Y %H:%M')
             
-            # Arredondar coordenadas para melhor visualização
+
             if 'Latitude' in queimadas_display.columns:
                 queimadas_display['Latitude'] = queimadas_display['Latitude'].round(6)
             if 'Longitude' in queimadas_display.columns:
@@ -1863,7 +1879,7 @@ with tabs[2]:
             
             st.dataframe(queimadas_display, use_container_width=True, hide_index=True, height=300)
             
-            # Botão de download
+
             csv_data = queimadas_display.to_csv(index=False)
             st.download_button(
                 label="📅 Baixar focos em UCs como CSV",
